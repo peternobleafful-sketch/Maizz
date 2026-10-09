@@ -30,8 +30,18 @@ A giving platform for churches in Ghana. Its own service, separate from Church M
 10. Security review, Data Protection Commission, tiny live pilot
 11. Later: replace GH₵5 collection, more churches, second provider
 
+## The ledger (step 2)
+The database design lives in `supabase/migrations/0001_ledger.sql`.
+- `churches` and `givers`: reference records. Never deleted.
+- `gifts`: one row per gift, in whole pesewas. The church receives `amount_pesewas` exactly; `fee_pesewas` is what the giver adds. Append-only.
+- `gift_events`: every change of a gift's progress (pending, succeeded, failed, abandoned, refunded) is a new row. Append-only. A repeated provider notice is rejected by a unique `provider_event_id`.
+- `gift_status` and `church_totals`: read-only views for the current status and what each church has received.
+- Only the server (Supabase service role) can reach these tables.
+
 ## Running it
 ```
 npm install
 npm run dev
+npm run typecheck
+npm test
 ```
