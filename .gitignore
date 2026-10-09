@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Secrets: never commit these. Keys go in Vercel settings or GitHub secrets.
+.env
+.env.*
+!.env.example
+
+.vercel/
+.DS_Store
+npm-debug.log*

@@ -1,0 +1,51 @@
+/* Maizz design rules: Black and Gold only. No gradients. Outfit and DM Mono. */
+:root {
+  --black: #000000;
+  --gold: #d4af37;
+  --gold-soft: #a88a2a;
+  --font-sans: var(--font-outfit), system-ui, sans-serif;
+  --font-mono: var(--font-dm-mono), ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--black);
+  color: var(--gold);
+  font-family: var(--font-sans);
+}
+
+body {
+  min-height: 100vh;
+}
+
+.hold {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 0 16px;
+  text-align: center;
+}
+
+.hold h1 {
+  margin: 0;
+  font-size: clamp(3rem, 12vw, 6rem);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.hold p {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  color: var(--gold-soft);
+  letter-spacing: 0.08em;
+}
