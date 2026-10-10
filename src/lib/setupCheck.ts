@@ -158,6 +158,19 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
           : "Could not check just now. Try again in a minute.",
     );
 
+    // 0006 adds church sign-in. Without it the church dashboard cannot work.
+    const staffTable = await status(fetchFn, `${rawUrl}/rest/v1/church_users?select=id&limit=0`, headers);
+    add(
+      "church_staff",
+      "Church sign-in tables are installed",
+      staffTable === 200,
+      staffTable === 200
+        ? "Church sign-in tables were found."
+        : staffTable === 404 || staffTable === 400
+          ? "Not found. Run 0006_church_staff.sql (in supabase/migrations) in the Supabase SQL Editor."
+          : "Could not check just now. Try again in a minute.",
+    );
+
     // The daily check leaves a note in the audit log every time it runs.
     const since = new Date(Date.now() - 26 * 3_600_000).toISOString();
     let ran: boolean | null = null;
@@ -185,8 +198,27 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
     add("ledger", "Ledger and audit log are installed and reachable", false, "Fix the Supabase settings above first.");
     add("locked", "Ledger refuses requests with no key", false, "Fix the Supabase settings above first.");
     add("church_accounts", "Church accounts are installed", false, "Fix the Supabase settings above first.");
+    add("church_staff", "Church sign-in tables are installed", false, "Fix the Supabase settings above first.");
     add("reconcile", "Daily check of the books has run in the last 26 hours", false, "Fix the Supabase settings above first.");
   }
+
+  // Church sign-in settings
+  const stafSecret = (env.STAFF_SECRET?.trim().length ?? 0) >= 32;
+  add(
+    "staff_secret",
+    "Church sign-in secret is set",
+    stafSecret,
+    stafSecret ? "STAFF_SECRET is set." : "Add STAFF_SECRET in Vercel (Production): a long random string, at least 32 characters.",
+  );
+  const mailReady = Boolean(env.RESEND_API_KEY?.trim() && env.MAIZZ_FROM_EMAIL?.trim());
+  add(
+    "email",
+    "Email sending is set up",
+    mailReady,
+    mailReady
+      ? "RESEND_API_KEY and MAIZZ_FROM_EMAIL are set."
+      : "Sign-in codes and invites need RESEND_API_KEY and MAIZZ_FROM_EMAIL in Vercel (Production).",
+  );
 
   // 7. Test mode guard
   add(

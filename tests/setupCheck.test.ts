@@ -9,7 +9,7 @@ const GOOD_ENV = {
 };
 
 const ok = { status: 200, json: [] };
-const all200 = [ok, ...Array.from({ length: 7 }, () => ok), { status: 401, json: {} }, ok, { json: [{ id: 1 }] }];
+const all200 = [ok, ...Array.from({ length: 7 }, () => ok), { status: 401, json: {} }, ok, ok, { json: [{ id: 1 }] }];
 
 function byId(results: Awaited<ReturnType<typeof runSetupChecks>>) {
   return Object.fromEntries(results.map((r) => [r.id, r]));
@@ -19,7 +19,7 @@ describe("setup check", () => {
   it("passes everything when settings are right", async () => {
     const m = mockFetch(all200);
     const r = byId(await runSetupChecks(GOOD_ENV, m.fn));
-    for (const id of ["paystack_key", "paystack_reach", "supabase_url", "supabase_key", "ledger", "locked", "church_accounts", "reconcile", "guard"]) {
+    for (const id of ["paystack_key", "paystack_reach", "supabase_url", "supabase_key", "ledger", "locked", "church_accounts", "church_staff", "reconcile", "guard"]) {
       expect(r[id]!.ok, `${id}: ${r[id]!.hint}`).toBe(true);
     }
   });
@@ -110,9 +110,29 @@ describe("setup check: daily check", () => {
 
 describe("setup check: church accounts", () => {
   it("tells you to run the church accounts file when its columns are missing", async () => {
-    const replies = [...all200.slice(0, -2), { status: 400, json: {} }, { json: [{ id: 1 }] }];
+    const replies = [...all200.slice(0, -3), { status: 400, json: {} }, ok, { json: [{ id: 1 }] }];
     const r = byId(await runSetupChecks(GOOD_ENV, mockFetch(replies).fn));
     expect(r.church_accounts!.ok).toBe(false);
     expect(r.church_accounts!.hint).toMatch(/0005/);
+  });
+});
+
+describe("setup check: church sign-in", () => {
+  it("tells you to run 0006 when the sign-in tables are missing", async () => {
+    const replies = [...all200.slice(0, -2), { status: 404, json: {} }, { json: [{ id: 1 }] }];
+    const r = byId(await runSetupChecks(GOOD_ENV, mockFetch(replies).fn));
+    expect(r.church_staff!.ok).toBe(false);
+    expect(r.church_staff!.hint).toMatch(/0006/);
+  });
+
+  it("checks the sign-in secret and email settings without showing them", async () => {
+    const none = byId(await runSetupChecks(GOOD_ENV, mockFetch(all200).fn));
+    expect(none.staff_secret!.ok).toBe(false);
+    expect(none.email!.ok).toBe(false);
+    const env = { ...GOOD_ENV, STAFF_SECRET: "s".repeat(40), RESEND_API_KEY: "re_abc", MAIZZ_FROM_EMAIL: "Maizz <a@b.co>" };
+    const set = byId(await runSetupChecks(env, mockFetch(all200).fn));
+    expect(set.staff_secret!.ok).toBe(true);
+    expect(set.email!.ok).toBe(true);
+    expect(JSON.stringify(set)).not.toContain("re_abc");
   });
 });

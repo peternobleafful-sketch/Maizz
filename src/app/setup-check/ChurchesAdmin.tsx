@@ -98,6 +98,35 @@ export default function ChurchesAdmin({ token }: { token: string }) {
     }
   }
 
+  const [people, setPeople] = useState<{ id: string; name: string; email: string; role: string; status: string }[] | null>(null);
+  const [pName, setPName] = useState("");
+  const [pEmail, setPEmail] = useState("");
+  const [pRole, setPRole] = useState("owner");
+
+  async function team(action: "list" | "invite" | "resend", extra: Record<string, unknown> = {}) {
+    setBusy(true);
+    if (action !== "list") setMessage("");
+    try {
+      const res = await fetch("/api/admin/staff", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token.trim()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ action, slug, ...extra }),
+      });
+      const data: { error?: string; message?: string; people?: typeof people } = await res.json();
+      if (!res.ok) setMessage(data.error ?? data.message ?? "Something went wrong.");
+      else {
+        if (data.message) setMessage(data.message);
+        if (data.people) setPeople(data.people);
+        return true;
+      }
+    } catch {
+      setMessage("Could not reach the site.");
+    } finally {
+      setBusy(false);
+    }
+    return false;
+  }
+
   const selected = churches?.find((c) => c.slug === slug) ?? null;
 
   return (
@@ -189,6 +218,61 @@ export default function ChurchesAdmin({ token }: { token: string }) {
             <button className="tool-button" onClick={() => void change("suspend")} disabled={busy}>
               Suspend church
             </button>
+          )}
+
+          {selected && (
+            <>
+              <h2>Team for {selected.name}</h2>
+              <p className="tool-note">
+                Each person gets an email to choose a password. They sign in with email, password and a code sent to their
+                email. This needs email sending to be set up.
+              </p>
+              <button className="tool-button" onClick={() => void team("list")} disabled={busy}>
+                Show team
+              </button>
+              {people && (
+                <ul className="tool-list">
+                  {people.length === 0 && <li>No one yet.</li>}
+                  {people.map((p) => (
+                    <li key={p.id}>
+                      <span className={p.status === "active" ? "tag tag-pass" : "tag tag-fix"}>{p.status.toUpperCase()}</span>
+                      <span className="tool-check">
+                        <strong>{p.name} · {p.role}</strong>
+                        <span>{p.email}</span>
+                        {p.status === "invited" && (
+                          <button className="give-link" onClick={() => void team("resend", { userId: p.id })} disabled={busy}>
+                            Send the invite again
+                          </button>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <label className="tool-label" htmlFor="p-name">Name</label>
+              <input id="p-name" className="tool-input" value={pName} onChange={(e) => setPName(e.target.value)} />
+              <label className="tool-label" htmlFor="p-email">Email</label>
+              <input id="p-email" className="tool-input" type="email" value={pEmail} onChange={(e) => setPEmail(e.target.value)} />
+              <label className="tool-label" htmlFor="p-role">Role</label>
+              <select id="p-role" className="tool-input" value={pRole} onChange={(e) => setPRole(e.target.value)}>
+                <option value="owner">Owner (everything, including payout and team)</option>
+                <option value="finance">Finance (gifts, payouts, exports)</option>
+                <option value="viewer">Viewer (overview and gifts)</option>
+              </select>
+              <button
+                className="tool-button"
+                disabled={busy || pName.trim().length < 1 || !pEmail.includes("@")}
+                onClick={async () => {
+                  if (await team("invite", { fullName: pName, email: pEmail, role: pRole })) {
+                    setPName("");
+                    setPEmail("");
+                    await team("list");
+                  }
+                }}
+              >
+                Send invite
+              </button>
+            </>
           )}
         </>
       )}

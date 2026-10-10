@@ -83,3 +83,7 @@ Givers cover Paystack's 1.95% and Maizz's own 1%, so the church receives the exa
 Blue (#011BFF), white and ink, in the spirit of atom.money. The giving page is a blue field with the amount at the top and one white sheet below. Logo files are in `public/brand`. Fonts Outfit and DM Mono. The design rule is in `CLAUDE.md`.
 
 The design brief is `docs/design.md`. The Claude Design mock-ups (giving page, home, church dashboard, sign-up, receipts, Church Manager "My giving", owner tools) were exported on 10 Oct 2026. The giving page, home page and "page not found" page are built to them. The dashboard, sign-up and "My giving" screens wait for steps 8 and 9, because they need church sign-in with 2FA first. Receipt emails are not built yet, so no page promises one.
+
+## Step 9, part 1: church sign-in
+
+People who sign in for a church are added from the owner tools (setup check page, Team). They get an email link to choose a password. To sign in they enter email and password, then a six-digit code sent to their email. Pages: `/church/sign-in`, `/church/invite`, `/church`. Needs migration `0006_church_staff.sql` and the settings `STAFF_SECRET`, `RESEND_API_KEY` and `MAIZZ_FROM_EMAIL`. The dashboard screens (overview, gifts, payouts, team, settings) come next.
