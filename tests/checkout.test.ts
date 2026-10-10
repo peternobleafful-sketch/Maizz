@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CHECKOUT_CHURCHES, giverStatus, parseCheckout, REFERENCE_PATTERN, startCheckout, toGiverStep } from "../src/lib/checkout";
+import { CheckoutError, giverStatus, parseCheckout, REFERENCE_PATTERN, startCheckout, toGiverStep } from "../src/lib/checkout";
 import { createPaystackProvider } from "../src/lib/payments/paystack";
-import { FakeLedger, mockFetch } from "./helpers";
+import { FakeLedger, makeChurch, mockFetch } from "./helpers";
 
 const good = {
   church: "maizz-test-church",
@@ -33,9 +33,7 @@ describe("parseCheckout", () => {
 
   it("refuses bad input with plain messages", () => {
     const bad: Record<string, unknown>[] = [
-      { church: "nope" },
       { church: "__proto__" },
-      { church: "constructor" },
       { amountPesewas: 99 },
       { amountPesewas: 5_000_001 },
       { amountPesewas: 100.5 },
@@ -56,8 +54,11 @@ describe("parseCheckout", () => {
     expect(parseCheckout("text").ok).toBe(false);
   });
 
-  it("only knows the test church for now", () => {
-    expect(Object.keys(CHECKOUT_CHURCHES)).toEqual(["maizz-test-church"]);
+  it("accepts any well-formed church address (the church itself is looked up later)", () => {
+    expect(parseCheckout({ ...good, church: "grace-chapel-accra" }).ok).toBe(true);
+    for (const bad of ["Grace", "grace chapel", "-grace", "grace--x", "", "x".repeat(81), "../etc"]) {
+      expect(parseCheckout({ ...good, church: bad }).ok, bad).toBe(false);
+    }
   });
 });
 
@@ -66,24 +67,25 @@ describe("startCheckout", () => {
   beforeEach(() => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     ledger = new FakeLedger();
-    ledger.churches.set("maizz-test-church", { id: "c1", name: "Maizz Test Church" });
+    ledger.churches.set("maizz-test-church", makeChurch({ id: "c1", slug: "maizz-test-church", name: "Maizz Test Church" }));
   });
 
-  const run = async (replies: Parameters<typeof mockFetch>[0], over: Record<string, unknown> = {}) => {
+  const run = async (replies: Parameters<typeof mockFetch>[0], over: Record<string, unknown> = {}, testMode = true) => {
     const m = mockFetch(replies);
     const provider = createPaystackProvider({ secretKey: "sk_test_abc", fetchFn: m.fn });
     const parsed = parseCheckout({ ...good, ...over });
     if (!parsed.ok) throw new Error(parsed.error);
-    const out = await startCheckout({ ledger, provider, input: parsed.input, testMode: true });
+    const out = await startCheckout({ ledger, provider, input: parsed.input, testMode });
     return { out, calls: m.calls };
   };
   const offline = { json: { status: true, data: { status: "pay_offline", display_text: "Paystack: approve" } } };
 
   it("adds the fee so the church gets the exact gift, and charges the total", async () => {
     const { out, calls } = await run([offline]);
-    expect(out.fees).toEqual({ giftPesewas: 10_000, feePesewas: 199, totalPesewas: 10_199 });
-    expect(ledger.gifts[0]).toMatchObject({ amountPesewas: 10_000, feePesewas: 199, totalPesewas: 10_199 });
-    expect((calls[0]!.body as { amount: number }).amount).toBe(10_199);
+    expect(out.fees).toMatchObject({ giftPesewas: 10_000, feePesewas: 301, totalPesewas: 10_301, maizzFeePesewas: 100 });
+    expect(ledger.gifts[0]).toMatchObject({ amountPesewas: 10_000, feePesewas: 301, totalPesewas: 10_301 });
+    expect(ledger.maizzFees.get(ledger.gifts[0]!.reference)).toBe(100);
+    expect((calls[0]!.body as { amount: number }).amount).toBe(10_301);
     expect(out.reference).toMatch(REFERENCE_PATTERN);
     expect(out.step).toEqual({ kind: "waiting" });
     expect(ledger.events.map((e) => e.status)).toEqual(["pending"]);
@@ -128,9 +130,47 @@ describe("startCheckout", () => {
     }
   });
 
-  it("refuses when the church does not exist in the ledger", async () => {
+  it("refuses a church that does not exist, or is pending or suspended", async () => {
     ledger.churches.clear();
-    await expect(run([offline])).rejects.toThrow("church_missing");
+    await expect(run([offline])).rejects.toBeInstanceOf(CheckoutError);
+    for (const status of ["pending", "suspended"] as const) {
+      ledger.churches.set("maizz-test-church", makeChurch({ id: "c1", slug: "maizz-test-church", name: "T", status }));
+      await expect(run([])).rejects.toBeInstanceOf(CheckoutError);
+    }
+    expect(ledger.gifts).toHaveLength(0);
+    expect(ledger.givers).toHaveLength(0);
+  });
+
+  describe("paying the church directly", () => {
+    const withPayout = () =>
+      ledger.churches.set(
+        "maizz-test-church",
+        makeChurch({ id: "c1", slug: "maizz-test-church", name: "T", subaccountCode: "ACCT_abc123xyz" }),
+      );
+
+    it("sends the church its share: the whole payment less what Maizz keeps, so the church gets exactly the gift", async () => {
+      withPayout();
+      const { out, calls } = await run([offline]);
+      const body = calls[0]!.body as { amount: number; subaccount: string; transaction_charge: number; bearer: string };
+      expect(body).toMatchObject({ subaccount: "ACCT_abc123xyz", bearer: "account", transaction_charge: out.fees.feePesewas });
+      expect(body.amount - body.transaction_charge).toBe(10_000);
+    });
+
+    it("works the same for any gift size", async () => {
+      withPayout();
+      for (const amountPesewas of [100, 101, 2_550, 99_999]) {
+        const { out, calls } = await run([offline], { amountPesewas });
+        const body = calls.at(-1)!.body as { amount: number; transaction_charge: number };
+        expect(body.amount - body.transaction_charge).toBe(amountPesewas);
+        expect(out.fees.giftPesewas).toBe(amountPesewas);
+      }
+    });
+
+    it("sends no split for the test church that has no payout account, in test mode only", async () => {
+      const { calls } = await run([offline]);
+      expect(calls[0]!.body).not.toHaveProperty("subaccount");
+      await expect(run([offline], {}, false)).rejects.toBeInstanceOf(CheckoutError);
+    });
   });
 });
 

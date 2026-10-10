@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ChurchesAdmin from "./ChurchesAdmin";
 
 interface Check {
   id: string;
@@ -214,6 +215,8 @@ export default function SetupCheckClient() {
           {testOutput && <p className="tool-message">{testOutput}</p>}
         </section>
       )}
+
+      {checks && <ChurchesAdmin token={token} />}
 
       {checks && (
         <section className="tool-section">

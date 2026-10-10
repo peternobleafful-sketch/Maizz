@@ -145,6 +145,19 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
         : "A request with no key was not refused. Tell Claude straight away.",
     );
 
+    // 0005 adds church status and payout columns. The giving page reads them, so a missing file would break giving.
+    const churchCols = await status(fetchFn, `${rawUrl}/rest/v1/churches?select=status,provider_subaccount_code&limit=0`, headers);
+    add(
+      "church_accounts",
+      "Church accounts are installed",
+      churchCols === 200,
+      churchCols === 200
+        ? "Church status and payout columns were found."
+        : churchCols === 400
+          ? "Not found. Run 0003, 0004 and 0005 (the files in supabase/migrations) in the Supabase SQL Editor, in that order."
+          : "Could not check just now. Try again in a minute.",
+    );
+
     // The daily check leaves a note in the audit log every time it runs.
     const since = new Date(Date.now() - 26 * 3_600_000).toISOString();
     let ran: boolean | null = null;
@@ -171,6 +184,7 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
   } else {
     add("ledger", "Ledger and audit log are installed and reachable", false, "Fix the Supabase settings above first.");
     add("locked", "Ledger refuses requests with no key", false, "Fix the Supabase settings above first.");
+    add("church_accounts", "Church accounts are installed", false, "Fix the Supabase settings above first.");
     add("reconcile", "Daily check of the books has run in the last 26 hours", false, "Fix the Supabase settings above first.");
   }
 

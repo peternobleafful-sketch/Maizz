@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { AuditEntry, AuditLog } from "../src/lib/audit";
-import type { EventStatus, GiftRecord, Ledger, NewEvent, NewGift, NewGiver } from "../src/lib/ledger";
+import type { ChurchRecord, ChurchStatus, EventStatus, GiftRecord, Ledger, NewEvent, NewGift, NewGiver, NewPayout } from "../src/lib/ledger";
 
 export interface Call {
   url: string;
@@ -38,6 +38,17 @@ export function sign(body: string, secret: string): string {
   return createHmac("sha512", secret).update(body).digest("hex");
 }
 
+export function makeChurch(over: Partial<ChurchRecord> & { id: string; slug: string; name: string }): ChurchRecord {
+  return {
+    status: "active",
+    subaccountCode: null,
+    payoutBankName: null,
+    payoutAccountLast4: null,
+    payoutAccountName: null,
+    ...over,
+  };
+}
+
 /** An in-memory ledger that behaves like the real one, including refusing repeated provider events. */
 export class FakeLedger implements Ledger {
   gifts: GiftRecord[] = [];
@@ -50,12 +61,39 @@ export class FakeLedger implements Ledger {
     return `church-${slug}`;
   }
 
-  churches = new Map<string, { id: string; name: string }>();
+  churches = new Map<string, ChurchRecord>();
+  maizzFees = new Map<string, number>();
   giftGivers = new Map<string, string | undefined>();
   givers: { id: string; fullName: string; phone: string }[] = [];
 
-  async findChurch(slug: string): Promise<{ id: string; name: string } | null> {
+  async findChurch(slug: string): Promise<ChurchRecord | null> {
     return this.churches.get(slug) ?? null;
+  }
+
+  async createChurch(c: { slug: string; name: string }): Promise<ChurchRecord> {
+    if (this.churches.has(c.slug)) throw new Error("A church with that web address already exists");
+    const church = makeChurch({ id: `church-${this.churches.size + 1}`, slug: c.slug, name: c.name, status: "pending" });
+    this.churches.set(c.slug, church);
+    return church;
+  }
+
+  async listChurches(): Promise<ChurchRecord[]> {
+    return [...this.churches.values()];
+  }
+
+  async setChurchPayout(churchId: string, p: NewPayout): Promise<void> {
+    const c = [...this.churches.values()].find((x) => x.id === churchId);
+    if (!c) throw new Error("That church was not found");
+    c.subaccountCode = p.subaccountCode;
+    c.payoutBankName = p.bankName;
+    c.payoutAccountLast4 = p.accountLast4;
+    c.payoutAccountName = p.accountName;
+  }
+
+  async setChurchStatus(churchId: string, status: ChurchStatus): Promise<void> {
+    const c = [...this.churches.values()].find((x) => x.id === churchId);
+    if (!c) throw new Error("That church was not found");
+    c.status = status;
   }
 
   async createGiver(g: NewGiver): Promise<string> {
@@ -75,6 +113,7 @@ export class FakeLedger implements Ledger {
       createdAt: new Date(this.now()).toISOString(),
     };
     this.giftGivers.set(g.reference, g.giverId);
+    this.maizzFees.set(g.reference, g.maizzFeePesewas ?? 0);
     this.gifts.push(gift);
     return gift;
   }

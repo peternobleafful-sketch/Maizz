@@ -58,11 +58,11 @@ npm test
 
 ## Fees (step 4)
 
-Givers cover Paystack's 1.95%, so the church receives the exact gift (`src/lib/fees.ts`). Whole pesewas only; the fee is rounded up.
+Givers cover Paystack's 1.95% and Maizz's own 1%, so the church receives the exact gift (`src/lib/fees.ts`). Whole pesewas only; fees are rounded up.
 
 ## The giving page (step 5, test mode only)
 
-`/give/maizz-test-church` is the giver's page: amount (quick buttons or any amount), gift type, mobile money network and number, name or anonymous. It shows "Gift + fees = total" and says only "Maizz". The giver is told thank you only when the ledger says the gift succeeded. Only the test church can receive gifts until church sign-up (step 7). Run `supabase/migrations/0003_gift_types.sql` once in Supabase. Card and bank transfer come later.
+`/give/maizz-test-church` is the giver's page: amount (quick buttons or any amount), gift type, mobile money network and number, name or anonymous. It shows "Gift + fees = total" and says only "Maizz". The giver is told thank you only when the ledger says the gift succeeded. Only an active church has a giving page. Run `supabase/migrations/0003_gift_types.sql` once in Supabase. Card and bank transfer come later.
 
 ## Safety (step 6)
 
@@ -70,3 +70,10 @@ Givers cover Paystack's 1.95%, so the church receives the exact gift (`src/lib/f
 - While a giver waits, the page asks the payment provider directly, so failures show up in seconds. Gifts the provider never confirms close as abandoned after 2 hours; a later payment still counts.
 - Refunds are recorded from the provider's refund notice and can never exceed what was paid. `/setup-check` has a test-mode refund button.
 - The nightly check (`/api/cron/reconcile`, 03:00, needs `CRON_SECRET` in Vercel) settles waiting gifts, re-checks gifts paid in the last 3 days against the provider, and writes problems to the audit log. `/setup-check` shows FIX if it has not run in 26 hours.
+
+## Church accounts (step 7, test mode only)
+
+- Run `supabase/migrations/0005_church_accounts.sql` (after 0003 and 0004) once in Supabase.
+- `/setup-check` has a Churches section: add a church (starts pending), set up its payout account (bank or mobile money, from Paystack's Ghana list), check the account holder's name Paystack returns, then activate. A church cannot be activated without a payout account and your confirmation.
+- Each gift is split at payment time: the church's payout account receives the gift exactly; Maizz keeps its 1% and pays the provider's cut out of the rest. Maizz keeps only the last 4 digits of a payout account number.
+- The giving page for a church is `/give/<church-slug>` and works only while the church is active.

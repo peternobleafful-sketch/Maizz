@@ -25,8 +25,34 @@ export interface NewGift {
   giftType: GiftType;
   amountPesewas: number;
   feePesewas: number;
+  /** Maizz's own part of the fee (the rest covers the payment provider). */
+  maizzFeePesewas?: number;
   /** Leave out for an anonymous gift: nothing about the giver is stored. */
   giverId?: string;
+}
+
+export type ChurchStatus = "pending" | "active" | "suspended";
+
+export interface ChurchRecord {
+  id: string;
+  slug: string;
+  name: string;
+  status: ChurchStatus;
+  /** The payment provider's code for the church's payout account. Null until payout is set up. */
+  subaccountCode: string | null;
+  payoutBankName: string | null;
+  /** Only the last 4 digits are kept. The provider holds the rest. */
+  payoutAccountLast4: string | null;
+  /** The account holder's name as the provider found it. */
+  payoutAccountName: string | null;
+}
+
+export interface NewPayout {
+  subaccountCode: string;
+  bankCode: string;
+  bankName: string;
+  accountLast4: string;
+  accountName: string;
 }
 
 export interface NewGiver {
@@ -45,7 +71,12 @@ export interface NewEvent {
 export interface Ledger {
   getOrCreateChurch(slug: string, name: string): Promise<string>;
   /** Looks a church up without ever creating one. */
-  findChurch(slug: string): Promise<{ id: string; name: string } | null>;
+  findChurch(slug: string): Promise<ChurchRecord | null>;
+  /** New churches start as "pending" and cannot receive gifts. Throws if the slug is taken. */
+  createChurch(church: { slug: string; name: string }): Promise<ChurchRecord>;
+  listChurches(): Promise<ChurchRecord[]>;
+  setChurchPayout(churchId: string, payout: NewPayout): Promise<void>;
+  setChurchStatus(churchId: string, status: ChurchStatus): Promise<void>;
   createGiver(giver: NewGiver): Promise<string>;
   createGift(gift: NewGift): Promise<GiftRecord>;
   findGiftByReference(reference: string): Promise<GiftRecord | null>;
@@ -89,6 +120,35 @@ function toGift(row: unknown): GiftRecord {
   };
 }
 
+const CHURCH_COLUMNS =
+  "id,slug,name,status,provider_subaccount_code,payout_bank_name,payout_account_last4,payout_account_name";
+
+function str(v: unknown): string | null {
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+function toChurch(row: unknown): ChurchRecord {
+  if (
+    !isRec(row) ||
+    typeof row.id !== "string" ||
+    typeof row.slug !== "string" ||
+    typeof row.name !== "string" ||
+    (row.status !== "pending" && row.status !== "active" && row.status !== "suspended")
+  ) {
+    throw new LedgerError("Unexpected church row from the database");
+  }
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    status: row.status,
+    subaccountCode: str(row.provider_subaccount_code),
+    payoutBankName: str(row.payout_bank_name),
+    payoutAccountLast4: str(row.payout_account_last4),
+    payoutAccountName: str(row.payout_account_name),
+  };
+}
+
 export function createSupabaseLedger(opts: {
   url: string;
   serviceKey: string;
@@ -101,7 +161,7 @@ export function createSupabaseLedger(opts: {
   // Legacy keys are JWTs and go in Authorization too. New sb_secret_ keys use apikey only.
   if (opts.serviceKey.startsWith("eyJ")) headers.Authorization = `Bearer ${opts.serviceKey}`;
 
-  async function request(method: "GET" | "POST", path: string, body?: unknown, prefer?: string): Promise<Response> {
+  async function request(method: "GET" | "POST" | "PATCH", path: string, body?: unknown, prefer?: string): Promise<Response> {
     try {
       return await fetchFn(`${base}/${path}`, {
         method,
@@ -139,11 +199,41 @@ export function createSupabaseLedger(opts: {
 
   return {
     async findChurch(slug) {
-      const res = await request("GET", `churches?slug=eq.${encodeURIComponent(slug)}&select=id,name&limit=1`);
+      const res = await request("GET", `churches?slug=eq.${encodeURIComponent(slug)}&select=${CHURCH_COLUMNS}&limit=1`);
       const found = (await rows(res, "church lookup"))[0];
-      return isRec(found) && typeof found.id === "string" && typeof found.name === "string"
-        ? { id: found.id, name: found.name }
-        : null;
+      return found === undefined ? null : toChurch(found);
+    },
+
+    async createChurch(church) {
+      const res = await request("POST", "churches", { slug: church.slug, name: church.name }, "return=representation");
+      if (await isUniqueViolation(res)) throw new LedgerError("A church with that web address already exists");
+      return toChurch((await rows(res, "church creation"))[0]);
+    },
+
+    async listChurches() {
+      const res = await request("GET", `churches?select=${CHURCH_COLUMNS}&order=created_at.asc&limit=500`);
+      return (await rows(res, "church list")).map(toChurch);
+    },
+
+    async setChurchPayout(churchId, payout) {
+      const res = await request(
+        "PATCH",
+        `churches?id=eq.${encodeURIComponent(churchId)}`,
+        {
+          provider_subaccount_code: payout.subaccountCode,
+          payout_bank_code: payout.bankCode,
+          payout_bank_name: payout.bankName,
+          payout_account_last4: payout.accountLast4,
+          payout_account_name: payout.accountName,
+        },
+        "return=representation",
+      );
+      if ((await rows(res, "payout setup")).length !== 1) throw new LedgerError("That church was not found");
+    },
+
+    async setChurchStatus(churchId, status) {
+      const res = await request("PATCH", `churches?id=eq.${encodeURIComponent(churchId)}`, { status }, "return=representation");
+      if ((await rows(res, "status change")).length !== 1) throw new LedgerError("That church was not found");
     },
 
     async createGiver(giver) {
@@ -169,6 +259,7 @@ export function createSupabaseLedger(opts: {
     async createGift(gift) {
       assertPesewas(gift.amountPesewas, "amount");
       assertPesewas(gift.feePesewas, "fee");
+      assertPesewas(gift.maizzFeePesewas ?? 0, "Maizz fee");
       const res = await request(
         "POST",
         "gifts",
@@ -179,6 +270,7 @@ export function createSupabaseLedger(opts: {
           gift_type: gift.giftType,
           amount_pesewas: gift.amountPesewas,
           fee_pesewas: gift.feePesewas,
+          maizz_fee_pesewas: gift.maizzFeePesewas ?? 0,
           total_pesewas: gift.amountPesewas + gift.feePesewas,
         },
         "return=representation",

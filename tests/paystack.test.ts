@@ -350,3 +350,68 @@ describe("capabilities", () => {
     expect(p.capabilities.currencies).toEqual(["GHS"]);
   });
 });
+
+describe("church payout accounts", () => {
+  const base = { reference: REF, amountPesewas: 10_301, email: "a@example.com", channel: "mobile_money" as const, mobileMoney: { network: "mtn" as const, phone: "0551234987" } };
+  const prompt = { json: { status: true, data: { status: "pay_offline" } } };
+
+  it("splits a payment: church account named, Maizz's flat share set, Maizz bears the provider's cut", async () => {
+    const { p, calls } = provider([prompt]);
+    await p.initialize({ ...base, split: { subaccountCode: "ACCT_abc123xyz", maizzKeepsPesewas: 301 } });
+    expect(calls[0]!.body).toMatchObject({ subaccount: "ACCT_abc123xyz", transaction_charge: 301, bearer: "account", amount: 10_301 });
+  });
+
+  it("sends no split fields when there is no split", async () => {
+    const { p, calls } = provider([prompt]);
+    await p.initialize(base);
+    expect(calls[0]!.body).not.toHaveProperty("subaccount");
+    expect(calls[0]!.body).not.toHaveProperty("bearer");
+  });
+
+  it("refuses a bad payout code or a split as big as the whole payment", async () => {
+    const { p, calls } = provider([]);
+    for (const split of [
+      { subaccountCode: "nope", maizzKeepsPesewas: 301 },
+      { subaccountCode: "ACCT_abc123xyz", maizzKeepsPesewas: 10_301 },
+      { subaccountCode: "ACCT_abc123xyz", maizzKeepsPesewas: -1 },
+      { subaccountCode: "ACCT_abc123xyz", maizzKeepsPesewas: 1.5 },
+    ]) {
+      await expect(p.initialize({ ...base, split })).rejects.toBeInstanceOf(ProviderError);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("creates a payout account and returns the holder's name for you to check", async () => {
+    const { p, calls } = provider([{ status: 201, json: { status: true, data: { subaccount_code: "ACCT_abc123xyz", account_name: "GRACE CHAPEL" } } }]);
+    const out = await p.createPayoutAccount({ businessName: " Grace Chapel ", bankCode: "MTN", accountNumber: "0551234987" });
+    expect(out).toEqual({ code: "ACCT_abc123xyz", accountName: "GRACE CHAPEL" });
+    expect(calls[0]!.url).toBe("https://api.paystack.co/subaccount");
+    expect(calls[0]!.body).toMatchObject({ business_name: "Grace Chapel", settlement_bank: "MTN", account_number: "0551234987", percentage_charge: 0 });
+  });
+
+  it("refuses bad payout details before calling Paystack, and a reply with no code", async () => {
+    const { p, calls } = provider([{ json: { status: true, data: {} } }]);
+    for (const input of [
+      { businessName: "G", bankCode: "MTN", accountNumber: "0551234987" },
+      { businessName: "Grace", bankCode: "M T N", accountNumber: "0551234987" },
+      { businessName: "Grace", bankCode: "MTN", accountNumber: "12" },
+    ]) {
+      await expect(p.createPayoutAccount(input)).rejects.toBeInstanceOf(ProviderError);
+    }
+    expect(calls).toHaveLength(0);
+    await expect(p.createPayoutAccount({ businessName: "Grace", bankCode: "MTN", accountNumber: "0551234987" })).rejects.toBeInstanceOf(ProviderError);
+  });
+
+  it("lists Ghana mobile money networks and banks", async () => {
+    const { p, calls } = provider([
+      { json: { status: true, data: [{ name: "MTN", code: "MTN", active: true }, { name: "Old", code: "OLD", active: false }] } },
+      { json: { status: true, data: [{ name: "GCB Bank", code: "040", active: true }] } },
+    ]);
+    expect(await p.listPayoutBanks()).toEqual([
+      { name: "MTN", code: "MTN", kind: "mobile_money" },
+      { name: "GCB Bank", code: "040", kind: "bank" },
+    ]);
+    expect(calls[0]!.url).toContain("type=mobile_money");
+    expect(calls[1]!.url).toContain("type=ghipss");
+  });
+});

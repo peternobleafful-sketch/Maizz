@@ -47,6 +47,7 @@ export async function POST(req: Request) {
       giftType: "other",
       amountPesewas: fees.giftPesewas,
       feePesewas: fees.feePesewas,
+      maizzFeePesewas: fees.maizzFeePesewas,
     });
 
     const result = await provider.initialize({

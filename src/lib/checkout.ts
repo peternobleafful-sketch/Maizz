@@ -9,8 +9,17 @@ import type { InitializeResult, MobileMoneyNetwork, PaymentProvider } from "./pa
 // The giver-facing gift flow. Givers only ever see "Maizz": nothing here passes on the
 // payment provider's own wording.
 
-/** Until church sign-up exists (step 7), only the test church can receive gifts. */
-export const CHECKOUT_CHURCHES: Readonly<Record<string, string>> = { "maizz-test-church": "Maizz Test Church" };
+export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** Why a gift could not be started. The message is safe to show to a giver. */
+export class CheckoutError extends Error {
+  constructor(
+    readonly code: "church_unavailable",
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 export const MIN_GIFT_PESEWAS = 100; // GH₵1.00
 export const MAX_GIFT_PESEWAS = 5_000_000; // GH₵50,000.00 until large-gift review exists
@@ -45,7 +54,7 @@ export function parseCheckout(raw: unknown): ParsedCheckout {
   const fail = (error: string): ParsedCheckout => ({ ok: false, error });
 
   const churchSlug = typeof b.church === "string" ? b.church : "";
-  if (!Object.hasOwn(CHECKOUT_CHURCHES, churchSlug)) return fail("We could not find that church.");
+  if (churchSlug.length > 80 || !SLUG_PATTERN.test(churchSlug)) return fail("We could not find that church.");
 
   const amount = b.amountPesewas;
   try {
@@ -112,7 +121,11 @@ export async function startCheckout(args: {
 }): Promise<CheckoutStarted> {
   const { ledger, provider, input, testMode } = args;
   const church = await ledger.findChurch(input.churchSlug);
-  if (!church) throw new Error("church_missing");
+  const unavailable = new CheckoutError("church_unavailable", "This church cannot receive gifts right now.");
+  if (!church || church.status !== "active") throw unavailable;
+  // Real churches are paid straight into their own payout account. Only in test mode may a church
+  // without one take a (test) gift. This stops real money landing in Maizz's account by mistake.
+  if (!church.subaccountCode && !testMode) throw unavailable;
 
   const fees = addFees(input.amountPesewas);
   const giverId = input.anonymous
@@ -127,6 +140,7 @@ export async function startCheckout(args: {
     giftType: input.giftType,
     amountPesewas: fees.giftPesewas,
     feePesewas: fees.feePesewas,
+    maizzFeePesewas: fees.maizzFeePesewas,
   });
 
   try {
@@ -137,6 +151,9 @@ export async function startCheckout(args: {
       channel: "mobile_money",
       mobileMoney: { network: input.network, phone: input.phone },
       metadata: { church_id: church.id, gift_type: input.giftType },
+      split: church.subaccountCode
+        ? { subaccountCode: church.subaccountCode, maizzKeepsPesewas: fees.feePesewas }
+        : undefined,
     });
     const failed = result.kind === "failed";
     await ledger.addEvent({ giftId: gift.id, status: failed ? "failed" : "pending", detail: { source: "initialize" } });

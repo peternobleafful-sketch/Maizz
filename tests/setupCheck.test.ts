@@ -9,7 +9,7 @@ const GOOD_ENV = {
 };
 
 const ok = { status: 200, json: [] };
-const all200 = [ok, ...Array.from({ length: 7 }, () => ok), { status: 401, json: {} }, { json: [{ id: 1 }] }];
+const all200 = [ok, ...Array.from({ length: 7 }, () => ok), { status: 401, json: {} }, ok, { json: [{ id: 1 }] }];
 
 function byId(results: Awaited<ReturnType<typeof runSetupChecks>>) {
   return Object.fromEntries(results.map((r) => [r.id, r]));
@@ -19,7 +19,7 @@ describe("setup check", () => {
   it("passes everything when settings are right", async () => {
     const m = mockFetch(all200);
     const r = byId(await runSetupChecks(GOOD_ENV, m.fn));
-    for (const id of ["paystack_key", "paystack_reach", "supabase_url", "supabase_key", "ledger", "locked", "reconcile", "guard"]) {
+    for (const id of ["paystack_key", "paystack_reach", "supabase_url", "supabase_key", "ledger", "locked", "church_accounts", "reconcile", "guard"]) {
       expect(r[id]!.ok, `${id}: ${r[id]!.hint}`).toBe(true);
     }
   });
@@ -105,5 +105,14 @@ describe("setup check: daily check", () => {
     const url = m.calls[m.calls.length - 1]!.url;
     expect(url).toContain("audit_log?action=eq.reconcile.run");
     expect(url).toMatch(/at=gte\.\d{4}-/);
+  });
+});
+
+describe("setup check: church accounts", () => {
+  it("tells you to run the church accounts file when its columns are missing", async () => {
+    const replies = [...all200.slice(0, -2), { status: 400, json: {} }, { json: [{ id: 1 }] }];
+    const r = byId(await runSetupChecks(GOOD_ENV, mockFetch(replies).fn));
+    expect(r.church_accounts!.ok).toBe(false);
+    expect(r.church_accounts!.hint).toMatch(/0005/);
   });
 });

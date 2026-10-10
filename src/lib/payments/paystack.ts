@@ -5,9 +5,12 @@ import {
   WebhookPayloadError,
   WebhookSignatureError,
   type InitializeInput,
+  type CreatePayoutAccountInput,
   type InitializeResult,
   type MobileMoneyNetwork,
   type PaymentProvider,
+  type PayoutAccount,
+  type PayoutBank,
   type ProviderStatus,
   type RefundInput,
   type RefundResult,
@@ -17,6 +20,7 @@ import {
 
 const API = "https://api.paystack.co";
 const REFERENCE = /^[A-Za-z0-9_.=-]{8,100}$/;
+const SUBACCOUNT = /^ACCT_[A-Za-z0-9]{6,40}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Paystack's codes for the Ghana mobile money networks.
@@ -78,6 +82,23 @@ export function createPaystackProvider(opts: PaystackOptions): PaymentProvider {
     return json.data;
   }
 
+  async function callList(path: string): Promise<Rec[]> {
+    let res: Response;
+    try {
+      res = await fetchFn(`${API}${path}`, {
+        headers: { Authorization: `Bearer ${secretKey}` },
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch {
+      throw new ProviderError("Could not reach Paystack");
+    }
+    const json: unknown = await res.json().catch(() => null);
+    if (!res.ok || !isRec(json) || json.status !== true || !Array.isArray(json.data)) {
+      throw new ProviderError("Could not read the list of banks", res.status);
+    }
+    return json.data.filter(isRec);
+  }
+
   function mapCharge(data: Rec): InitializeResult {
     const message = text(data.display_text) ?? text(data.message) ?? "";
     switch (text(data.status)) {
@@ -125,13 +146,28 @@ export function createPaystackProvider(opts: PaystackOptions): PaymentProvider {
       assertPositivePesewas(input.amountPesewas, "amount");
       if (!EMAIL.test(input.email)) throw new ProviderError("A valid email address is needed");
 
-      const common = {
+      const common: Rec = {
         email: input.email,
         amount: input.amountPesewas,
         currency: "GHS",
         reference: input.reference,
         metadata: input.metadata ?? {},
       };
+      if (input.split) {
+        if (!SUBACCOUNT.test(input.split.subaccountCode)) throw new ProviderError("Invalid payout account code");
+        if (
+          !Number.isSafeInteger(input.split.maizzKeepsPesewas) ||
+          input.split.maizzKeepsPesewas < 0 ||
+          input.split.maizzKeepsPesewas >= input.amountPesewas
+        ) {
+          throw new ProviderError("Invalid split amount");
+        }
+        // The church's account gets the payment less this flat amount. Maizz's own account pays the
+        // provider's cut out of what it keeps, so the church is never charged.
+        common.subaccount = input.split.subaccountCode;
+        common.transaction_charge = input.split.maizzKeepsPesewas;
+        common.bearer = "account";
+      }
 
       if (input.channel === "mobile_money") {
         const mm = input.mobileMoney;
@@ -152,6 +188,37 @@ export function createPaystackProvider(opts: PaystackOptions): PaymentProvider {
       const url = text(data.authorization_url);
       if (!url || !url.startsWith("https://")) throw new ProviderError("Paystack sent no payment page");
       return { kind: "redirect", url };
+    },
+
+    async listPayoutBanks(): Promise<PayoutBank[]> {
+      const out: PayoutBank[] = [];
+      for (const [type, kind] of [["mobile_money", "mobile_money"], ["ghipss", "bank"]] as const) {
+        const data = await callList(`/bank?country=ghana&currency=GHS&type=${type}&perPage=100`);
+        for (const b of data) {
+          const name = text(b.name);
+          const code = text(b.code);
+          if (name && code && b.active !== false && b.is_deleted !== true) out.push({ name, code, kind });
+        }
+      }
+      return out;
+    },
+
+    async createPayoutAccount(input: CreatePayoutAccountInput): Promise<PayoutAccount> {
+      if (!/^[A-Za-z0-9]{2,12}$/.test(input.bankCode)) throw new ProviderError("Invalid bank code");
+      if (!/^\d{6,20}$/.test(input.accountNumber)) throw new ProviderError("Invalid account number");
+      const name = input.businessName.trim();
+      if (name.length < 2 || name.length > 100) throw new ProviderError("Invalid church name");
+      const data = await call("POST", "/subaccount", {
+        business_name: name,
+        settlement_bank: input.bankCode,
+        bank_code: input.bankCode,
+        account_number: input.accountNumber,
+        // Each payment names exactly what Maizz keeps, so no standing percentage is set here.
+        percentage_charge: 0,
+      });
+      const code = text(data.subaccount_code);
+      if (!code || !SUBACCOUNT.test(code)) throw new ProviderError("Paystack sent no payout account code");
+      return { code, accountName: text(data.account_name) ?? "" };
     },
 
     async submitOtp(reference: string, otp: string): Promise<InitializeResult> {

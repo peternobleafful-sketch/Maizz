@@ -13,6 +13,31 @@ export interface InitializeInput {
   channel: Channel;
   mobileMoney?: { network: MobileMoneyNetwork; phone: string };
   metadata?: Record<string, string>;
+  /**
+   * Send the church its share directly. The church receives the whole payment except
+   * `maizzKeepsPesewas`, which stays with Maizz (it covers Maizz's fee and the provider's cut).
+   */
+  split?: { subaccountCode: string; maizzKeepsPesewas: number };
+}
+
+/** A bank or mobile money network a church can be paid through. */
+export interface PayoutBank {
+  name: string;
+  code: string;
+  kind: "mobile_money" | "bank";
+}
+
+export interface CreatePayoutAccountInput {
+  businessName: string;
+  bankCode: string;
+  accountNumber: string;
+}
+
+export interface PayoutAccount {
+  /** The provider's code for this church's payout account. */
+  code: string;
+  /** The account holder's name as the provider found it, to be compared with the church's name. */
+  accountName: string;
 }
 
 export type InitializeResult =
@@ -78,6 +103,10 @@ export interface PaymentProvider {
   /** Asks the provider directly. This is the trusted answer, not a notice sent to us. */
   verify(reference: string): Promise<VerifyResult>;
   refund(input: RefundInput): Promise<RefundResult>;
+  /** The banks and mobile money networks churches can be paid through. */
+  listPayoutBanks(): Promise<PayoutBank[]>;
+  /** Sets up a church's payout account. No money moves. */
+  createPayoutAccount(input: CreatePayoutAccountInput): Promise<PayoutAccount>;
   /** Checks the signature and turns the provider's notice into a WebhookEvent. Throws if it is not genuine. */
   parseWebhook(rawBody: string, signature: string | null): WebhookEvent;
 }

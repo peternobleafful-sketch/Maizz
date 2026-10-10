@@ -1,5 +1,5 @@
 import { getAudit, sourceKeyFor, type AuditLog } from "@/lib/audit";
-import { parseCheckout, startCheckout } from "@/lib/checkout";
+import { CheckoutError, parseCheckout, startCheckout } from "@/lib/checkout";
 import { classifyPaystackKey } from "@/lib/config";
 import { logError } from "@/lib/log";
 import { getLedger, getPaymentProvider } from "@/lib/payments";
@@ -58,6 +58,7 @@ export async function POST(req: Request) {
       totalPesewas: started.fees.totalPesewas,
     });
   } catch (err) {
+    if (err instanceof CheckoutError) return Response.json({ error: err.message }, { status: 404 });
     logError("checkout.failed", { reason: err instanceof Error ? err.message : "unknown" });
     return Response.json({ error: "Giving is not available right now. Please try again shortly." }, { status: 503 });
   }

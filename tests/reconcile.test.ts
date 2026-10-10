@@ -18,6 +18,8 @@ function fakeProvider(): PaymentProvider {
     initialize: async () => ({ kind: "failed", message: "x" }),
     submitOtp: async () => ({ kind: "failed", message: "x" }),
     refund: async () => ({ status: "pending", providerRefundId: "r" }),
+    listPayoutBanks: async () => [],
+    createPayoutAccount: async () => ({ code: "ACCT_x", accountName: "x" }),
     parseWebhook: () => ({ kind: "ignored", providerEventId: "x", reference: "" }),
     verify: async (reference) => {
       const a = answers.get(reference);

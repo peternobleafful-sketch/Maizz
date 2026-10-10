@@ -13,6 +13,8 @@ const GIFT_ROW = {
   created_at: "2026-10-10T10:00:00+00:00",
 };
 
+const CHURCH_ROW = { id: "c1", slug: "grace", name: "Grace", status: "active", provider_subaccount_code: null };
+
 function ledger(replies: Parameters<typeof mockFetch>[0], key = "sb_secret_abc") {
   const m = mockFetch(replies);
   return { l: createSupabaseLedger({ url: `${URL_}/`, serviceKey: key, fetchFn: m.fn }), calls: m.calls };
@@ -108,8 +110,17 @@ describe("supabase ledger", () => {
 
 describe("supabase ledger: churches and givers", () => {
   it("finds a church without ever creating one", async () => {
-    const { l, calls } = ledger([{ json: [{ id: "c1", name: "Grace" }] }, { json: [] }]);
-    expect(await l.findChurch("grace")).toEqual({ id: "c1", name: "Grace" });
+    const { l, calls } = ledger([{ json: [CHURCH_ROW] }, { json: [] }]);
+    expect(await l.findChurch("grace")).toEqual({
+      id: "c1",
+      slug: "grace",
+      name: "Grace",
+      status: "active",
+      subaccountCode: null,
+      payoutBankName: null,
+      payoutAccountLast4: null,
+      payoutAccountName: null,
+    });
     expect(await l.findChurch("nope")).toBeNull();
     expect(calls.every((c) => c.method === "GET")).toBe(true);
   });
@@ -146,5 +157,43 @@ describe("supabase ledger: lists for the daily check", () => {
     const { l, calls } = ledger([{ json: [{ ...GIFT_ROW, id: "g1" }] }]);
     await l.listRecentPaid({ sinceDays: 3, limit: 20 });
     expect(calls[0]!.url).toContain("was_paid=eq.true");
+  });
+});
+
+describe("supabase ledger: church accounts", () => {
+  it("creates a church as pending, and refuses a taken address", async () => {
+    const a = ledger([{ status: 201, json: [{ ...CHURCH_ROW, status: "pending" }] }]);
+    expect((await a.l.createChurch({ slug: "grace", name: "Grace" })).status).toBe("pending");
+    expect(a.calls[0]!.body).toEqual({ slug: "grace", name: "Grace" });
+    const b = ledger([{ status: 409, json: { code: "23505" } }]);
+    await expect(b.l.createChurch({ slug: "grace", name: "Grace" })).rejects.toThrow(/already exists/);
+  });
+
+  it("lists churches", async () => {
+    const { l } = ledger([{ json: [CHURCH_ROW, { ...CHURCH_ROW, id: "c2", slug: "two", status: "pending" }] }]);
+    const all = await l.listChurches();
+    expect(all.map((c) => c.status)).toEqual(["active", "pending"]);
+  });
+
+  it("refuses a church row with an unknown status", async () => {
+    const { l } = ledger([{ json: [{ ...CHURCH_ROW, status: "open" }] }]);
+    await expect(l.findChurch("grace")).rejects.toThrow(LedgerError);
+  });
+
+  it("saves payout details with only the last four digits, and changes status", async () => {
+    const { l, calls } = ledger([{ json: [{ id: "c1" }] }, { json: [{ id: "c1" }] }, { json: [] }]);
+    await l.setChurchPayout("c1", { subaccountCode: "ACCT_abc", bankCode: "MTN", bankName: "MTN", accountLast4: "4987", accountName: "Grace" });
+    await l.setChurchStatus("c1", "active");
+    expect(calls[0]!.method).toBe("PATCH");
+    expect(calls[0]!.url).toContain("churches?id=eq.c1");
+    expect(JSON.stringify(calls[0]!.body)).not.toContain("0551234987");
+    expect(calls[1]!.body).toEqual({ status: "active" });
+    await expect(l.setChurchStatus("nope", "active")).rejects.toThrow(/not found/);
+  });
+
+  it("sends Maizz's fee with a gift", async () => {
+    const { l, calls } = ledger([{ status: 201, json: [GIFT_ROW] }]);
+    await l.createGift({ reference: "mz_ref_12345678", churchId: "c1", giftType: "tithe", amountPesewas: 10_000, feePesewas: 301, maizzFeePesewas: 100 });
+    expect((calls[0]!.body as Record<string, unknown>).maizz_fee_pesewas).toBe(100);
   });
 });
