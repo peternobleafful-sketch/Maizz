@@ -170,6 +170,7 @@ export function createPaystackProvider(opts: PaystackOptions): PaymentProvider {
         amountPesewas: wholeNumber(data.amount, "amount"),
         currency: text(data.currency) ?? "",
         providerTransactionId: text(data.id) ?? "",
+        rawStatus: text(data.status),
       };
     },
 

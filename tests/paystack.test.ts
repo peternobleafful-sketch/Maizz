@@ -226,6 +226,7 @@ describe("verify", () => {
       amountPesewas: 10_150,
       currency: "GHS",
       providerTransactionId: "42",
+      rawStatus: "success",
     });
     expect(calls[0]!.url).toBe(`https://api.paystack.co/transaction/verify/${REF}`);
     expect(calls[0]!.method).toBe("GET");

@@ -153,8 +153,11 @@ export async function reconcile(args: {
 
   const paid = await ledger.listRecentPaid({ sinceDays: 3, limit: 100 });
   const donePaid = await inChunks(paid, deadline, async (gift) => {
-    s.paidChecked += 1;
     try {
+      // After a refund the provider changes its own status for the payment, so refunded gifts are skipped here.
+      const now = await ledger.currentStatus(gift.reference);
+      if (!now || now.refundedPesewas > 0) return;
+      s.paidChecked += 1;
       const answer = await ask(provider, gift.reference);
       if (!answer || answer.status !== "succeeded" || answer.currency !== "GHS" || answer.amountPesewas !== gift.totalPesewas) {
         s.paidNotConfirmed += 1;
@@ -165,7 +168,7 @@ export async function reconcile(args: {
           target: gift.reference,
           detail: {
             expected_pesewas: gift.totalPesewas,
-            provider_status: answer?.status ?? "not_found",
+            provider_status: answer?.rawStatus ?? answer?.status ?? "not_found",
             received_pesewas: answer?.amountPesewas ?? null,
             received_currency: answer?.currency ?? null,
           },

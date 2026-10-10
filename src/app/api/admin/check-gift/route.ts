@@ -29,7 +29,9 @@ export async function GET(req: Request) {
       ledger.currentStatus(reference),
     ]);
     return Response.json({
-      paystack: fromProvider ? { status: fromProvider.status, amountPesewas: fromProvider.amountPesewas } : null,
+      paystack: fromProvider
+        ? { status: fromProvider.rawStatus ?? fromProvider.status, amountPesewas: fromProvider.amountPesewas }
+        : null,
       ledger: inLedger,
     });
   } catch (err) {

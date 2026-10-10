@@ -33,6 +33,8 @@ export interface VerifyResult {
   amountPesewas: number;
   currency: string;
   providerTransactionId: string;
+  /** The provider's own word for the status, kept for logs and checks. Never shown to givers. */
+  rawStatus?: string;
 }
 
 export interface RefundInput {

@@ -189,3 +189,15 @@ describe("daily check", () => {
     await expect(run()).rejects.toThrow();
   });
 });
+
+describe("refunded gifts in the daily check", () => {
+  it("does not raise an alarm when the provider's status changes after a refund", async () => {
+    const paid = await gift("mz_cccccccc", 60 * 24);
+    await ledger.addEvent({ giftId: paid.id, status: "succeeded" });
+    await ledger.addEvent({ giftId: paid.id, status: "refunded", amountPesewas: 10_150 });
+    answers.set(paid.reference, answer(paid.reference, { status: "pending", rawStatus: "reversed" }));
+    const s = await reconcile({ ledger, provider: fakeProvider(), audit, now: () => clock });
+    expect(s.paidNotConfirmed).toBe(0);
+    expect(audit.actions()).toEqual(["reconcile.run"]);
+  });
+});
