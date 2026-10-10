@@ -263,3 +263,56 @@ describe("setup", () => {
     expect(() => createStaffService({ store, audit, mailer, pepper: "short" })).toThrow();
   });
 });
+
+describe("password reset", () => {
+  it("emails a one-use link and signs the person out everywhere", async () => {
+    await activeUser();
+    const a = await svc.signIn("ama@church.org", PASSWORD, "src");
+    if (!a.ok) throw new Error("expected ok");
+    const s = await svc.verifyCode(a.challenge, codeFromMail(), "src");
+    if (!s.ok) throw new Error("expected ok");
+
+    await svc.requestReset("Ama@Church.org", "https://x.test", "src");
+    expect(sent.at(-1)!.subject).toMatch(/Reset/);
+    const link = /reset\?token=([\w-]+)/.exec(sent.at(-1)!.text)![1]!;
+    expect(store.tokens.every((t) => !t.tokenHash.includes(link))).toBe(true);
+
+    expect(await svc.resetPassword(link, "short")).toMatchObject({ ok: false, reason: "weak" });
+    expect(await svc.resetPassword(link, "a brand new password")).toEqual({ ok: true });
+    expect(await svc.resetPassword(link, "another password again")).toMatchObject({ ok: false, reason: "invalid" });
+
+    expect(await svc.getSession(s.sessionToken)).toBeNull();
+    expect(await svc.signIn("ama@church.org", PASSWORD, "src")).toEqual({ ok: false, reason: "wrong" });
+    expect((await svc.signIn("ama@church.org", "a brand new password", "src")).ok).toBe(true);
+  });
+
+  it("looks the same for unknown, invited and active emails, and sends only to people who can sign in", async () => {
+    await activeUser();
+    await svc.invite({ churchId: "c1", churchName: "G", email: "new@church.org", fullName: "N", role: "viewer", baseUrl: "https://x.test" });
+    const before = sent.length;
+    await svc.requestReset("ghost@church.org", "https://x.test", "src");
+    await svc.requestReset("new@church.org", "https://x.test", "src");
+    await svc.requestReset("not-an-email", "https://x.test", "src");
+    expect(sent.length).toBe(before);
+    await svc.requestReset("ama@church.org", "https://x.test", "src");
+    expect(sent.length).toBe(before + 1);
+  });
+
+  it("limits reset emails from one place, and links expire after an hour", async () => {
+    await activeUser();
+    const before = sent.length;
+    for (let i = 0; i < 8; i++) await svc.requestReset("ama@church.org", "https://x.test", "same");
+    expect(sent.length - before).toBe(5);
+    const link = /reset\?token=([\w-]+)/.exec(sent.at(-1)!.text)![1]!;
+    clock += 61 * 60_000;
+    expect(await svc.resetPassword(link, "a brand new password")).toMatchObject({ ok: false, reason: "invalid" });
+  });
+
+  it("tells the owner when a person is locked out", async () => {
+    const alerts: string[] = [];
+    svc = createStaffService({ store, audit, mailer, pepper: PEPPER, now: () => clock, alert: async (k) => void alerts.push(k) });
+    await activeUser();
+    for (let i = 0; i < 5; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", `s${i}`);
+    expect(alerts).toEqual(["staff_locked"]);
+  });
+});

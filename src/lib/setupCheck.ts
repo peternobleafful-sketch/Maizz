@@ -210,6 +210,15 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
     stafSecret,
     stafSecret ? "STAFF_SECRET is set." : "Add STAFF_SECRET in Vercel (Production): a long random string, at least 32 characters.",
   );
+  const alertOk = Boolean(env.ALERT_EMAIL?.trim().includes("@")) && Boolean(env.RESEND_API_KEY?.trim() && env.MAIZZ_FROM_EMAIL?.trim());
+  add(
+    "alerts",
+    "Alert emails are set up",
+    alertOk,
+    alertOk
+      ? "Maizz will email you about odd events."
+      : "Add ALERT_EMAIL in Vercel (Production) with the address you want alerts sent to. It also needs the email settings below.",
+  );
   const mailReady = Boolean(env.RESEND_API_KEY?.trim() && env.MAIZZ_FROM_EMAIL?.trim());
   add(
     "email",

@@ -91,3 +91,11 @@ People who sign in for a church are added from the owner tools (setup check page
 ## Step 9, part 2: church dashboard
 
 Signed-in church people see: Overview (last 7 days, this month, all time, by gift type, latest gifts), Gifts (filters, detail, CSV for finance and owners), Payouts (payout account, totals; payout history later), Team and Settings (owners), and a printable QR share card. Pages are in `src/app/church/(app)`. Roles: viewer, finance, owner. Still to do: payout history from the payment provider, receipts, the Church Manager "My giving" link (step 8), pausing giving from the dashboard, password reset.
+
+## Alerts, receipts, password reset and backups
+
+- **Alerts:** set `ALERT_EMAIL` (plus the email settings). Odd events email the owner at most once an hour per kind. A second cron, `/api/cron/watchdog` at 08:00, emails if the daily check did not run.
+- **Receipts:** an optional email box on the giving page (named gifts only). Receipts go out once, when the gift is first recorded as paid.
+- **Password reset:** `/church/forgot` and `/church/reset`. Needs migration `0007_password_reset.sql`.
+- **Books copy:** setup page, "Download the books" (CSV, no personal data).
+- **Incident plan:** `docs/INCIDENT_RESPONSE.md`.

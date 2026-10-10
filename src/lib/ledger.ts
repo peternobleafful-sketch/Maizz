@@ -58,6 +58,19 @@ export interface NewPayout {
 export interface NewGiver {
   fullName: string;
   phone: string;
+  /** Optional, only for a named gift. Used to send the receipt. */
+  email?: string;
+}
+
+/** What a receipt needs. Null email means the giver did not ask for one. */
+export interface ReceiptInfo {
+  email: string | null;
+  churchName: string;
+  giftType: string;
+  amountPesewas: number;
+  feePesewas: number;
+  totalPesewas: number;
+  createdAt: string;
 }
 
 export interface NewEvent {
@@ -79,6 +92,8 @@ export interface Ledger {
   setChurchStatus(churchId: string, status: ChurchStatus): Promise<void>;
   createGiver(giver: NewGiver): Promise<string>;
   createGift(gift: NewGift): Promise<GiftRecord>;
+  /** Everything a receipt email needs, or null if the gift does not exist. */
+  findReceiptInfo(reference: string): Promise<ReceiptInfo | null>;
   findGiftByReference(reference: string): Promise<GiftRecord | null>;
   /** "duplicate" means this provider event was already recorded, which is fine. */
   addEvent(event: NewEvent): Promise<"added" | "duplicate">;
@@ -237,7 +252,12 @@ export function createSupabaseLedger(opts: {
     },
 
     async createGiver(giver) {
-      const res = await request("POST", "givers", { full_name: giver.fullName, phone: giver.phone }, "return=representation");
+      const res = await request(
+        "POST",
+        "givers",
+        { full_name: giver.fullName, phone: giver.phone, ...(giver.email ? { email: giver.email } : {}) },
+        "return=representation",
+      );
       const created = (await rows(res, "giver creation"))[0];
       if (!isRec(created) || typeof created.id !== "string") throw new LedgerError("Giver was not created");
       return created.id;
@@ -276,6 +296,32 @@ export function createSupabaseLedger(opts: {
         "return=representation",
       );
       return toGift((await rows(res, "gift creation"))[0]);
+    },
+
+    async findReceiptInfo(reference) {
+      const g = (await rows(
+        await request(
+          "GET",
+          `gifts?reference=eq.${encodeURIComponent(reference)}&select=church_id,giver_id,gift_type,amount_pesewas,fee_pesewas,total_pesewas,created_at&limit=1`,
+        ),
+        "receipt lookup",
+      ))[0];
+      if (!isRec(g) || typeof g.church_id !== "string") return null;
+      const c = (await rows(await request("GET", `churches?id=eq.${encodeURIComponent(g.church_id)}&select=name&limit=1`), "receipt church"))[0];
+      let email: string | null = null;
+      if (typeof g.giver_id === "string") {
+        const v = (await rows(await request("GET", `givers?id=eq.${encodeURIComponent(g.giver_id)}&select=email&limit=1`), "receipt giver"))[0];
+        if (isRec(v) && typeof v.email === "string" && v.email.includes("@")) email = v.email;
+      }
+      return {
+        email,
+        churchName: isRec(c) && typeof c.name === "string" ? c.name : "your church",
+        giftType: String(g.gift_type),
+        amountPesewas: pesewas(g.amount_pesewas, "amount"),
+        feePesewas: pesewas(g.fee_pesewas, "fee"),
+        totalPesewas: pesewas(g.total_pesewas, "total"),
+        createdAt: typeof g.created_at === "string" ? g.created_at : "",
+      };
     },
 
     async findGiftByReference(reference) {

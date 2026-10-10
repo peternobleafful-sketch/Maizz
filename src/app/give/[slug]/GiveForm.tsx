@@ -24,6 +24,7 @@ export default function GiveForm(props: {
   const [anonymous, setAnonymous] = useState(false);
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [network, setNetwork] = useState("mtn");
 
   const [phase, setPhase] = useState<Phase>("form");
@@ -83,6 +84,7 @@ export default function GiveForm(props: {
           giftType,
           anonymous,
           fullName: anonymous ? undefined : fullName,
+          email: anonymous ? undefined : email.trim() || undefined,
           phone,
           network,
         }),
@@ -261,7 +263,7 @@ export default function GiveForm(props: {
 
               {anonymous && (
                 <p className="give-note">
-                  {props.churchName} will see this gift as Anonymous. Your number is never shown to the church.
+                  {props.churchName} will see this gift as Anonymous. Your number is never shown to the church. No email receipt is sent for anonymous gifts.
                 </p>
               )}
 
@@ -276,6 +278,22 @@ export default function GiveForm(props: {
                     onChange={(e) => setFullName(e.target.value)}
                   />
                   <small className="give-hint">So the church can thank you.</small>
+                </div>
+              )}
+
+              {!anonymous && (
+                <div className="give-group">
+                  <label className="give-label" htmlFor="email">Email for your receipt (optional)</label>
+                  <input
+                    id="email"
+                    className="give-input"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    placeholder="name@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
                 </div>
               )}
 
@@ -360,6 +378,7 @@ export default function GiveForm(props: {
                 </div>
               )}
               <p className="give-refbox"><span>Reference</span><span>{reference}</span></p>
+              {!anonymous && email.trim() && <p className="give-hint">We will email your receipt to {email.trim()}.</p>}
               <button className="give-button" onClick={again}>Give again</button>
             </div>
           )}

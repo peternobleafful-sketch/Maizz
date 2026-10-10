@@ -42,6 +42,8 @@ export interface CheckoutInput {
   giftType: GiftType;
   anonymous: boolean;
   fullName?: string;
+  /** Optional. Only kept for a named gift, to send the receipt. */
+  email?: string;
   phone: string;
   network: MobileMoneyNetwork;
 }
@@ -81,7 +83,15 @@ export function parseCheckout(raw: unknown): ParsedCheckout {
     if (fullName.length < 2 || fullName.length > 80) return fail("Enter your name, or choose to give anonymously.");
   }
 
-  return { ok: true, input: { churchSlug, amountPesewas: amount, giftType, anonymous, fullName, phone, network } };
+  // An email is only taken for a named gift. An anonymous gift keeps nothing about the giver.
+  let email: string | undefined;
+  if (!anonymous && typeof b.email === "string" && b.email.trim() !== "") {
+    const e = b.email.trim().toLowerCase();
+    if (e.length > 200 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return fail("Check your email address, or leave it empty.");
+    email = e;
+  }
+
+  return { ok: true, input: { churchSlug, amountPesewas: amount, giftType, anonymous, fullName, email, phone, network } };
 }
 
 export type GiverStep =
@@ -110,7 +120,7 @@ export interface CheckoutStarted {
   fees: FeeBreakdown;
 }
 
-// A stand-in until real receipts exist. Givers are not asked for an email.
+// Used when the giver gave no email (or gave anonymously). The payment provider needs some address.
 const STAND_IN_EMAIL = "giver@example.com";
 
 export async function startCheckout(args: {
@@ -130,7 +140,7 @@ export async function startCheckout(args: {
   const fees = addFees(input.amountPesewas);
   const giverId = input.anonymous
     ? undefined
-    : await ledger.createGiver({ fullName: input.fullName ?? "", phone: input.phone });
+    : await ledger.createGiver({ fullName: input.fullName ?? "", phone: input.phone, email: input.email });
 
   const reference = newGiftReference(testMode ? "mz_test" : "mz");
   const gift = await ledger.createGift({
@@ -147,7 +157,7 @@ export async function startCheckout(args: {
     const result = await provider.initialize({
       reference,
       amountPesewas: gift.totalPesewas,
-      email: STAND_IN_EMAIL,
+      email: !input.anonymous && input.email ? input.email : STAND_IN_EMAIL,
       channel: "mobile_money",
       mobileMoney: { network: input.network, phone: input.phone },
       metadata: { church_id: church.id, gift_type: input.giftType },

@@ -22,6 +22,7 @@ export default function SetupCheckClient() {
   const [reference, setReference] = useState("");
   const [testOutput, setTestOutput] = useState("");
   const [checkOutput, setCheckOutput] = useState("");
+  const [booksOutput, setBooksOutput] = useState("");
 
   const auth = { Authorization: `Bearer ${token.trim()}` };
 
@@ -140,6 +141,30 @@ export default function SetupCheckClient() {
     }
   }
 
+  async function downloadBooks() {
+    setBusy(true);
+    setBooksOutput("");
+    try {
+      const res = await fetch("/api/admin/export", { method: "POST", headers: auth });
+      if (!res.ok) {
+        const data: { error?: string; message?: string } = await res.json().catch(() => ({}));
+        setBooksOutput(data.error ?? data.message ?? "Something went wrong.");
+        return;
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `maizz-books-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setBooksOutput("Downloaded. Keep the file somewhere safe, away from Supabase.");
+    } catch {
+      setBooksOutput("Could not reach the site.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="tool">
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -230,6 +255,19 @@ export default function SetupCheckClient() {
             Run daily check now
           </button>
           {checkOutput && <p className="tool-message">{checkOutput}</p>}
+        </section>
+      )}
+
+      {checks && (
+        <section className="tool-section">
+          <h2>Copy of the books</h2>
+          <p className="tool-note">
+            Downloads every gift and its status as a CSV file, with no names, phone numbers or emails. Keep a copy away from Supabase, for example once a week, until paid backups are on.
+          </p>
+          <button className="tool-button" onClick={downloadBooks} disabled={busy}>
+            Download the books
+          </button>
+          {booksOutput && <p className="tool-message">{booksOutput}</p>}
         </section>
       )}
     </main>

@@ -1,6 +1,7 @@
 import { getAudit } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import { getLedger, getPaymentProvider } from "@/lib/payments";
+import { getNotifier } from "@/lib/notifyRuntime";
 import { processWebhook } from "@/lib/payments/webhookHandler";
 
 export const runtime = "nodejs";
@@ -27,6 +28,7 @@ export async function POST(req: Request) {
     rawBody,
     signature: req.headers.get("x-paystack-signature"),
     audit,
+    notify: getNotifier(),
   });
   return Response.json(result.body, { status: result.status });
 }

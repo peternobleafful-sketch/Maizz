@@ -1,6 +1,7 @@
 import { getAudit } from "./audit";
 import { ConfigError, requireSupabase, type Env } from "./config";
 import { requireMailer } from "./mailer";
+import { getNotifier } from "./notifyRuntime";
 import { createStaffService, StaffError, type StaffService } from "./staff";
 import { createSupabaseStaffStore } from "./staffStore";
 
@@ -16,6 +17,7 @@ export function getStaffService(env: Env = process.env, opts: { needMail?: boole
     audit: getAudit(env),
     mailer: opts.needMail === false ? { send: async () => { throw new StaffError("unavailable", "no mail"); } } : requireMailer(env),
     pepper,
+    alert: (k, subject, lines) => getNotifier(env).alert(k, subject, lines),
   });
 }
 

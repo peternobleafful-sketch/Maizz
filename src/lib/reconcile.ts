@@ -1,5 +1,6 @@
 import type { AuditLog } from "./audit";
 import type { GiftRecord, Ledger } from "./ledger";
+import { NO_NOTIFIER, type Notifier } from "./notify";
 import { logError } from "./log";
 import { ProviderError, type PaymentProvider, type VerifyResult } from "./payments/types";
 
@@ -33,8 +34,10 @@ export async function settleGift(args: {
   audit?: AuditLog;
   gift: GiftRecord;
   now?: number;
+  notify?: Notifier;
 }): Promise<SettleOutcome> {
   const { ledger, provider, audit, gift } = args;
+  const notify = args.notify ?? NO_NOTIFIER;
   const now = args.now ?? Date.now();
   try {
     const answer = await ask(provider, gift.reference);
@@ -52,15 +55,20 @@ export async function settleGift(args: {
             detail: { expected_pesewas: gift.totalPesewas, received_pesewas: answer.amountPesewas, received_currency: answer.currency },
           })
           .catch(() => logError("audit.write_failed", { action: "reconcile.amount_mismatch" }));
+        await notify.alert("amount_mismatch", "A payment did not match its gift amount", [
+          `Gift reference: ${gift.reference}`,
+          "Paystack reports a different amount than the gift. It was NOT recorded as paid. Check it in the Paystack dashboard.",
+        ]);
         return "mismatch";
       }
       // Same id the payment notice uses, so a notice and this check can never both record it.
-      await ledger.addEvent({
+      const added = await ledger.addEvent({
         giftId: gift.id,
         status: "succeeded",
         providerEventId: idPart ? `${provider.name}:charge.success:${idPart}` : undefined,
         detail: { provider: provider.name, source: "verify" },
       });
+      if (added === "added") await notify.paid(gift);
       return "paid";
     }
     if (answer?.status === "failed") {
@@ -122,8 +130,10 @@ export async function reconcile(args: {
   provider: PaymentProvider;
   audit: AuditLog;
   now?: () => number;
+  notify?: Notifier;
 }): Promise<ReconcileSummary> {
   const { ledger, provider, audit } = args;
+  const notify = args.notify ?? NO_NOTIFIER;
   const clock = args.now ?? Date.now;
   const deadline = Date.now() + TIME_BUDGET_MS;
   const s: ReconcileSummary = {
@@ -142,7 +152,7 @@ export async function reconcile(args: {
   const waiting = await ledger.listUnsettled({ olderThanMinutes: 10, newerThanDays: 3, limit: 100 });
   const doneWaiting = await inChunks(waiting, deadline, async (gift) => {
     s.checkedPending += 1;
-    const out = await settleGift({ ledger, provider, audit, gift, now: clock() });
+    const out = await settleGift({ ledger, provider, audit, gift, now: clock(), notify });
     if (out === "paid") s.settledPaid += 1;
     else if (out === "failed") s.settledFailed += 1;
     else if (out === "abandoned") s.abandoned += 1;
@@ -188,5 +198,13 @@ export async function reconcile(args: {
     outcome: odd ? "failed" : "ok",
     detail: { ...s },
   });
+  if (odd) {
+    await notify.alert("daily_check_problem", "The daily check of the books found a problem", [
+      `Gifts that did not match: ${s.mismatches}`,
+      `Paid gifts the payment provider no longer confirms: ${s.paidNotConfirmed}`,
+      `Errors: ${s.errors}`,
+      s.incomplete ? "The check could not finish in time (too many gifts for one run)." : "",
+    ].filter(Boolean));
+  }
   return s;
 }

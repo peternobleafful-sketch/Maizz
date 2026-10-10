@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { AuditEntry, AuditLog } from "../src/lib/audit";
-import type { ChurchRecord, ChurchStatus, EventStatus, GiftRecord, Ledger, NewEvent, NewGift, NewGiver, NewPayout } from "../src/lib/ledger";
+import type { ChurchRecord, ChurchStatus, EventStatus, GiftRecord, Ledger, NewEvent, NewGift, NewGiver, NewPayout, ReceiptInfo } from "../src/lib/ledger";
 
 export interface Call {
   url: string;
@@ -64,7 +64,8 @@ export class FakeLedger implements Ledger {
   churches = new Map<string, ChurchRecord>();
   maizzFees = new Map<string, number>();
   giftGivers = new Map<string, string | undefined>();
-  givers: { id: string; fullName: string; phone: string }[] = [];
+  givers: { id: string; fullName: string; phone: string; email?: string }[] = [];
+  giftTypes = new Map<string, string>();
 
   async findChurch(slug: string): Promise<ChurchRecord | null> {
     return this.churches.get(slug) ?? null;
@@ -113,9 +114,26 @@ export class FakeLedger implements Ledger {
       createdAt: new Date(this.now()).toISOString(),
     };
     this.giftGivers.set(g.reference, g.giverId);
+    this.giftTypes.set(g.reference, g.giftType);
     this.maizzFees.set(g.reference, g.maizzFeePesewas ?? 0);
     this.gifts.push(gift);
     return gift;
+  }
+
+  async findReceiptInfo(reference: string): Promise<ReceiptInfo | null> {
+    const gift = this.gifts.find((g) => g.reference === reference);
+    if (!gift) return null;
+    const giverId = this.giftGivers.get(reference);
+    const church = [...this.churches.values()].find((c) => c.id === gift.churchId);
+    return {
+      email: this.givers.find((v) => v.id === giverId)?.email ?? null,
+      churchName: church?.name ?? "Test Church",
+      giftType: this.giftTypes.get(reference) ?? "tithe",
+      amountPesewas: gift.amountPesewas,
+      feePesewas: gift.feePesewas,
+      totalPesewas: gift.totalPesewas,
+      createdAt: gift.createdAt,
+    };
   }
 
   async findGiftByReference(reference: string): Promise<GiftRecord | null> {

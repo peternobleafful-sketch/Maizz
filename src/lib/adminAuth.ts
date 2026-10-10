@@ -39,6 +39,8 @@ export async function adminGate(args: {
   tokenEnv?: string;
   /** What a wrong secret is logged as, and what the lock-out counts. */
   failedAction?: string;
+  /** Called when the tools lock because of repeated wrong secrets. Must not throw. */
+  onLocked?: () => Promise<void>;
 }): Promise<Response | null> {
   const { req, env, audit, action, target } = args;
   const FAILED = args.failedAction ?? "admin.auth_failed";
@@ -55,6 +57,7 @@ export async function adminGate(args: {
       audit.countSince(FAILED, ADMIN_LIMITS.windowMinutes),
     ]);
     if (mine >= ADMIN_LIMITS.perSource || everyone >= ADMIN_LIMITS.global) {
+      await args.onLocked?.();
       return Response.json(
         { error: "locked", message: "Too many wrong attempts. The tools are locked for 15 minutes." },
         { status: 429, headers: { "Retry-After": String(ADMIN_LIMITS.windowMinutes * 60) } },
@@ -96,5 +99,12 @@ export async function openAdminRoute(
   } catch (err) {
     return unavailable(err instanceof Error ? err.message : "The Supabase settings are missing.");
   }
-  return adminGate({ req, env, audit, action, target, ...options });
+  const onLocked = async () => {
+    const { getNotifier } = await import("./notifyRuntime");
+    await getNotifier(env).alert("admin_locked", "The owner tools were locked after wrong attempts", [
+      "Someone tried the owner tools or the daily-check address with a wrong secret several times, so they were locked for 15 minutes.",
+      "If this was not you, rotate SETUP_CHECK_TOKEN and CRON_SECRET in Vercel.",
+    ]);
+  };
+  return adminGate({ req, env, audit, action, target, onLocked, ...options });
 }

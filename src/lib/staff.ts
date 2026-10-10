@@ -7,13 +7,16 @@ import type { AuditLog } from "./audit";
 export const ROLES = ["owner", "finance", "viewer"] as const;
 export type Role = (typeof ROLES)[number];
 export type UserStatus = "invited" | "active" | "disabled";
-export type TokenKind = "invite" | "code" | "session";
+export type TokenKind = "invite" | "code" | "session" | "reset";
 
 export const STAFF_LIMITS = {
   codeMinutes: 10,
   codeTries: 5,
   sessionHours: 12,
   inviteHours: 48,
+  resetMinutes: 60,
+  /** Reset emails one source address may ask for in the window. */
+  resetRequests: 5,
   /** Wrong passwords or codes for one person before they are locked out. */
   userFailures: 5,
   lockMinutes: 15,
@@ -154,6 +157,8 @@ export function createStaffService(deps: {
   /** Secret mixed into stored hashes. At least 32 characters. */
   pepper: string;
   now?: () => number;
+  /** Tells the owner about something odd (a person or place locked out). Must not throw. */
+  alert?: (kind: string, subject: string, lines: string[]) => Promise<void>;
 }) {
   const { store, audit, mailer } = deps;
   const now = deps.now ?? (() => Date.now());
@@ -186,7 +191,13 @@ export function createStaffService(deps: {
       failedAttempts: failures,
       lockedUntil: failures >= STAFF_LIMITS.userFailures ? now() + STAFF_LIMITS.lockMinutes * minute : user.lockedUntil,
     });
-    if (failures === STAFF_LIMITS.userFailures) await record("staff.locked", "denied", sourceKey, user.id);
+    if (failures === STAFF_LIMITS.userFailures) {
+      await record("staff.locked", "denied", sourceKey, user.id);
+      await deps.alert?.("staff_locked", "A church sign-in was locked after wrong attempts", [
+        "A person's church sign-in was locked for 15 minutes after five wrong passwords or codes.",
+        "If they were not the one trying, someone may be guessing. Check the audit log (staff.signin_failed, staff.code_failed).",
+      ]);
+    }
   }
 
   return {
@@ -296,6 +307,45 @@ export function createStaffService(deps: {
       } catch {
         return { ok: false, reason: "unavailable" };
       }
+    },
+
+    /** "Forgot password". Always looks the same from outside, so nobody can test which emails have accounts. */
+    async requestReset(emailRaw: unknown, baseUrl: string, sourceKey: string): Promise<void> {
+      try {
+        const asked = await audit.countSince("staff.reset_requested", STAFF_LIMITS.windowMinutes, sourceKey);
+        await record("staff.reset_requested", "ok", sourceKey);
+        if (asked >= STAFF_LIMITS.resetRequests) return;
+        const email = normaliseEmail(emailRaw);
+        const user = email ? await store.findUserByEmail(email) : null;
+        if (!user || user.status !== "active") return;
+        await store.revokeTokens(user.id, "reset");
+        const token = newToken();
+        await store.createToken({ userId: user.id, kind: "reset", tokenHash: h(token), expiresAt: now() + STAFF_LIMITS.resetMinutes * minute });
+        await mailer.send({
+          to: user.email,
+          subject: "Reset your Maizz password",
+          text: `Hello ${user.fullName},\n\nSomeone asked to reset the password for your Maizz sign-in. Choose a new password here (the link works once, for ${STAFF_LIMITS.resetMinutes} minutes):\n${baseUrl.replace(/\/+$/, "")}/church/reset?token=${token}\n\nIf this was not you, ignore this email. Your password has not changed.`,
+        });
+        await record("staff.reset_sent", "ok", sourceKey, user.id);
+      } catch {
+        // Nothing is said to the person either way.
+      }
+    },
+
+    async resetPassword(token: string, password: string): Promise<{ ok: true } | { ok: false; reason: "invalid" | "weak"; message: string }> {
+      const problem = passwordProblem(password);
+      if (problem) return { ok: false, reason: "weak", message: problem };
+      const bad = { ok: false as const, reason: "invalid" as const, message: "This link has expired or was already used. Ask for a new one." };
+      const found = await store.findTokenByHash("reset", h(token));
+      const user = found && found.usedAt === null && found.expiresAt > now() ? await store.getUser(found.userId) : null;
+      if (!found || !user || user.status !== "active") return bad;
+      if (!(await store.consumeToken(found.id))) return bad;
+      await store.updateUser(user.id, { passwordHash: await hashPassword(password), failedAttempts: 0, lockedUntil: null });
+      // A new password signs the person out everywhere.
+      await store.revokeTokens(user.id, "session");
+      await store.revokeTokens(user.id, "code");
+      await record("staff.password_reset", "ok", undefined, user.id);
+      return { ok: true };
     },
 
     async getSession(sessionToken: string | undefined): Promise<SessionInfo | null> {

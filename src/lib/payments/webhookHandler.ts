@@ -1,5 +1,6 @@
 import type { AuditEntry, AuditLog } from "../audit";
 import type { Ledger } from "../ledger";
+import { NO_NOTIFIER, type Notifier } from "../notify";
 import { log, logError } from "../log";
 import {
   WebhookPayloadError,
@@ -30,8 +31,11 @@ export async function processWebhook(args: {
   signature: string | null;
   /** Permanent record of refused and odd notices. Writing to it never blocks recording a payment. */
   audit?: AuditLog;
+  /** Receipts and owner alerts. Never allowed to stop a payment being recorded. */
+  notify?: Notifier;
 }): Promise<WebhookResponse> {
   const { provider, ledger, rawBody, signature, audit } = args;
+  const notify = args.notify ?? NO_NOTIFIER;
 
   // Best effort. If the audit log is down we still log to the console and carry on.
   // A throttle stops an attacker filling the audit log with junk.
@@ -59,6 +63,10 @@ export async function processWebhook(args: {
         { action: "webhook.bad_signature", outcome: "denied", detail: { provider: provider.name } },
         { max: 20, minutes: 10 },
       );
+      await notify.alert("webhook_bad_signature", "A payment message with a wrong signature was refused", [
+        "Someone sent Maizz a payment message that was not signed correctly. It was refused and nothing was recorded.",
+        "A few of these can be probing. If they keep coming, or you did not change any Paystack settings, check the audit log.",
+      ]);
       return { status: 401, body: { ok: false, result: "bad_signature" } };
     }
     if (err instanceof WebhookPayloadError) {
@@ -107,6 +115,10 @@ export async function processWebhook(args: {
             received_currency: event.currency ?? null,
           },
         });
+        await notify.alert("amount_mismatch", "A payment did not match its gift amount", [
+          `Gift reference: ${gift.reference}`,
+          "A payment notice arrived for a different amount than the gift. It was NOT recorded as paid. Check it in the Paystack dashboard.",
+        ]);
         return { status: 200, body: { ok: true, result: "amount_mismatch_not_recorded" } };
       }
       const outcome = await ledger.addEvent({
@@ -116,6 +128,7 @@ export async function processWebhook(args: {
         detail: { provider: provider.name, source: "webhook" },
       });
       log("webhook.recorded", { giftId: gift.id, status: "succeeded", outcome });
+      if (outcome === "added") await notify.paid(gift);
       return { status: 200, body: { ok: true, result: outcome } };
     }
 
@@ -140,6 +153,10 @@ export async function processWebhook(args: {
         target: gift.reference,
         detail: { provider: provider.name, refunded_pesewas: refunded, total_pesewas: gift.totalPesewas },
       });
+      await notify.alert("refund_invalid", "A refund notice was refused", [
+        `Gift reference: ${gift.reference}`,
+        "A refund notice had an amount that does not fit the gift. It was not recorded. Check it in the Paystack dashboard.",
+      ]);
       return { status: 200, body: { ok: true, result: "refund_amount_invalid_not_recorded" } };
     }
     const now = await ledger.currentStatus(gift.reference);

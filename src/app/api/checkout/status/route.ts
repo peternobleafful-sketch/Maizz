@@ -1,6 +1,7 @@
 import { giverStatus, REFERENCE_PATTERN } from "@/lib/checkout";
 import { logError } from "@/lib/log";
 import { getLedger, getPaymentProvider } from "@/lib/payments";
+import { getNotifier } from "@/lib/notifyRuntime";
 import { settleGift } from "@/lib/reconcile";
 
 export const runtime = "nodejs";
@@ -19,7 +20,7 @@ export async function GET(req: Request) {
     if (s && s.status === "pending") {
       const gift = await ledger.findGiftByReference(reference);
       if (gift && Date.now() - Date.parse(gift.createdAt) > SETTLE_AFTER_MS) {
-        await settleGift({ ledger, provider: getPaymentProvider(), gift });
+        await settleGift({ ledger, provider: getPaymentProvider(), gift, notify: getNotifier() });
         s = await ledger.currentStatus(reference);
       }
     }

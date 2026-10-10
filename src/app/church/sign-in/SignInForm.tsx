@@ -87,6 +87,7 @@ export default function SignInForm() {
               <button className="give-button" type="submit" disabled={busy || !email.trim() || !password}>
                 {busy ? "Checking…" : "Continue"}
               </button>
+              <a className="give-link" href="/church/forgot">Forgot your password?</a>
               <p className="give-hint">A code is sent to your email every time you sign in, so only you can get in.</p>
             </form>
           ) : (

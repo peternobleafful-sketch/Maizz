@@ -11,7 +11,7 @@ let churchId: string;
 
 beforeAll(async () => {
   db = new PGlite();
-  for (const f of ["0001_ledger.sql", "0002_audit.sql", "0003_gift_types.sql", "0004_status_rules.sql", "0005_church_accounts.sql", "0006_church_staff.sql"]) {
+  for (const f of ["0001_ledger.sql", "0002_audit.sql", "0003_gift_types.sql", "0004_status_rules.sql", "0005_church_accounts.sql", "0006_church_staff.sql", "0007_password_reset.sql"]) {
     await db.exec(read(f));
   }
   churchId = (await db.query<{ id: string }>("insert into churches (name, slug) values ('C', 'c') returning id")).rows[0]!.id;
@@ -54,5 +54,8 @@ describe("0006 church staff", () => {
     await db.query("insert into staff_tokens (user_id, kind, token_hash, expires_at) values ($1, 'session', 'h1', $2)", [id, exp]);
     await expect(db.query("insert into staff_tokens (user_id, kind, token_hash, expires_at) values ($1, 'invite', 'h1', $2)", [id, exp])).rejects.toThrow();
     await expect(db.query("insert into staff_tokens (user_id, kind, token_hash, expires_at) values ($1, 'other', 'h2', $2)", [id, exp])).rejects.toThrow();
+    // 0007: reset links are allowed, and are unique like the others
+    await db.query("insert into staff_tokens (user_id, kind, token_hash, expires_at) values ($1, 'reset', 'h3', $2)", [id, exp]);
+    await expect(db.query("insert into staff_tokens (user_id, kind, token_hash, expires_at) values ($1, 'reset', 'h3', $2)", [id, exp])).rejects.toThrow();
   });
 });
