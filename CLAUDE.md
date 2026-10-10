@@ -20,7 +20,7 @@ Nine rules apply to all work: verify webhook signatures; no secrets in code or c
 - Apple: the iPhone app opens a web checkout page. Never an in-app pay button.
 
 ## Design
-Black and Gold only. No gradients. Fonts Outfit and DM Mono.
+Changed by Isaac on 10 Oct 2026 (he chose to drop Black and Gold). Brand: Maizz Blue (#011BFF), white and ink (#0A0A0F), inspired by atom.money's look: bold flat blue, soft gradients in hero areas, large confident type, rounded surfaces. Gradients are allowed, used sparingly. Logo files are in `public/brand` (ink and white versions). Fonts Outfit and DM Mono. Mobile first; givers use phones.
 
 ## Build order
 1 project, 2 ledger, 3 Paystack connection (test mode), 4 fees, 5 checkout page, 6 safety (duplicates, late notices, failures, refunds, daily reconciliation), 7 church sub-accounts, 8 Church Manager link, 9 church dashboard, 10 security review + Data Protection Commission + tiny live pilot, 11 later (replace the GH₵5 collection, more churches, second provider). Build each step alone and test it before the next.

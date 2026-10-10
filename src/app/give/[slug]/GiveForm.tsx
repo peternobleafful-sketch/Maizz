@@ -142,182 +142,217 @@ export default function GiveForm(props: {
     setOtp("");
   }
 
+  const showAmount = phase === "form";
+  const heroTotal = formatCedis(paidTotal);
+
   return (
-    <main className="give">
-      <header className="give-head">
-        <p className="give-brand">MAIZZ</p>
-        <h1>Give to {props.churchName}</h1>
-      </header>
+    <div className="give-wrap">
+      <main className="give">
+        <header className="give-hero">
+          <div className="give-top">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="give-logo" src="/brand/maizz-logo-white.png" alt="Maizz" width={1101} height={296} />
+            {props.testMode && <p className="give-test">Test mode: no real money moves</p>}
+          </div>
+          <p className="give-church">Give to {props.churchName}</p>
 
-      {props.testMode && <p className="give-test">Test mode. No real money moves.</p>}
-
-      {phase === "form" && (
-        <form
-          className="give-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submit();
-          }}
-        >
-          <fieldset className="give-group">
-            <legend className="tool-label">Amount (GH₵)</legend>
-            <div className="give-chips">
-              {QUICK.map((q) => (
-                <button
-                  type="button"
-                  key={q}
-                  className={amount === q ? "give-chip on" : "give-chip"}
-                  onClick={() => setAmountText(String(q / 100))}
-                >
-                  {q / 100}
-                </button>
-              ))}
-            </div>
-            <input
-              className="tool-input"
-              inputMode="decimal"
-              placeholder="Or type an amount, e.g. 75 or 75.50"
-              aria-label="Amount in cedis"
-              value={amountText}
-              onChange={(e) => setAmountText(e.target.value)}
-            />
-          </fieldset>
-
-          <fieldset className="give-group">
-            <legend className="tool-label">What are you giving?</legend>
-            <div className="give-chips">
-              {props.types.map((t) => (
-                <button
-                  type="button"
-                  key={t.value}
-                  className={giftType === t.value ? "give-chip on" : "give-chip"}
-                  onClick={() => setGiftType(t.value)}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          <fieldset className="give-group">
-            <legend className="tool-label">Mobile money network</legend>
-            <div className="give-chips">
-              {NETWORKS.map((n) => (
-                <button
-                  type="button"
-                  key={n.value}
-                  className={network === n.value ? "give-chip on" : "give-chip"}
-                  onClick={() => setNetwork(n.value)}
-                >
-                  {n.label}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          <label className="tool-label" htmlFor="phone">Mobile money number</label>
-          <input
-            id="phone"
-            className="tool-input"
-            inputMode="tel"
-            autoComplete="tel"
-            placeholder="0551234987"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
-
-          <label className="give-check">
-            <input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} />
-            <span>Give anonymously (your name is not kept)</span>
-          </label>
-
-          {!anonymous && (
+          {showAmount ? (
             <>
-              <label className="tool-label" htmlFor="name">Your name</label>
-              <input
-                id="name"
-                className="tool-input"
-                autoComplete="name"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-              />
+              <div className="give-amount">
+                <span className="give-cedi">GH₵</span>
+                <input
+                  className="give-figure"
+                  inputMode="decimal"
+                  placeholder="0"
+                  aria-label="Amount in cedis"
+                  value={amountText}
+                  onChange={(e) => setAmountText(e.target.value)}
+                />
+              </div>
+              <div className="give-quick">
+                {QUICK.map((q) => (
+                  <button
+                    type="button"
+                    key={q}
+                    className={amount === q ? "give-pill on" : "give-pill"}
+                    onClick={() => setAmountText(String(q / 100))}
+                  >
+                    {q / 100}
+                  </button>
+                ))}
+              </div>
             </>
+          ) : (
+            <p className="give-total">{heroTotal}</p>
+          )}
+        </header>
+
+        <section className="give-sheet">
+          {phase === "form" && (
+            <form
+              className="give-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submit();
+              }}
+            >
+              <fieldset className="give-group">
+                <legend className="give-label">What are you giving?</legend>
+                <div className="give-chips">
+                  {props.types.map((t) => (
+                    <button
+                      type="button"
+                      key={t.value}
+                      className={giftType === t.value ? "give-chip on" : "give-chip"}
+                      onClick={() => setGiftType(t.value)}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset className="give-group">
+                <legend className="give-label">Pay with mobile money</legend>
+                <div className="give-chips">
+                  {NETWORKS.map((n) => (
+                    <button
+                      type="button"
+                      key={n.value}
+                      className={network === n.value ? "give-chip on" : "give-chip"}
+                      onClick={() => setNetwork(n.value)}
+                    >
+                      {n.label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+
+              <div className="give-group">
+                <label className="give-label" htmlFor="phone">Mobile money number</label>
+                <input
+                  id="phone"
+                  className="give-input"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="0551234987"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
+              </div>
+
+              <label className="give-check">
+                <input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} />
+                <span>Give anonymously. We will not keep your name.</span>
+              </label>
+
+              {!anonymous && (
+                <div className="give-group">
+                  <label className="give-label" htmlFor="name">Your name</label>
+                  <input
+                    id="name"
+                    className="give-input"
+                    autoComplete="name"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {fees && (
+                <div className="give-sum" aria-live="polite">
+                  <p className="give-row"><span>Gift</span><span>{formatCedis(fees.giftPesewas)}</span></p>
+                  <p className="give-row"><span>Fees</span><span>{formatCedis(fees.feePesewas)}</span></p>
+                  <p className="give-row big"><span>Total</span><span>{formatCedis(fees.totalPesewas)}</span></p>
+                  <small>{props.churchName} receives the full {formatCedis(fees.giftPesewas)}.</small>
+                </div>
+              )}
+
+              {error && <p className="give-error" role="alert">{error}</p>}
+
+              <button
+                className="give-button"
+                type="submit"
+                disabled={busy || !fees || phone.trim().length === 0 || (!anonymous && fullName.trim().length < 2)}
+              >
+                {fees ? `Give ${formatCedis(fees.totalPesewas)}` : "Enter an amount"}
+              </button>
+
+              <p className="give-safe">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="4" y="11" width="16" height="10" rx="2" />
+                  <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                </svg>
+                You approve the payment on your phone. Maizz never sees your PIN.
+              </p>
+            </form>
           )}
 
-          {fees && (
-            <p className="give-sum" aria-live="polite">
-              Gift {formatCedis(fees.giftPesewas)} + fees {formatCedis(fees.feePesewas)} = <strong>{formatCedis(fees.totalPesewas)}</strong>
-              <span>The church receives the full {formatCedis(fees.giftPesewas)}.</span>
-            </p>
+          {phase === "waiting" && (
+            <div className="give-state">
+              <div className="give-pulse" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#011bff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="7" y="2" width="10" height="20" rx="2" />
+                  <path d="M11 18h2" />
+                </svg>
+              </div>
+              <h2>Check your phone</h2>
+              <p>Approve the {heroTotal} request with your mobile money PIN. This page updates by itself.</p>
+              {slow && <p className="give-ref">Still waiting. If nothing came, go back and try again.</p>}
+              <button className="give-link" onClick={again}>Go back</button>
+            </div>
           )}
 
-          {error && <p className="tool-message" role="alert">{error}</p>}
+          {phase === "confirming" && (
+            <div className="give-state">
+              <div className="give-pulse" aria-hidden="true" />
+              <h2>Confirming your gift</h2>
+              <p>Your payment went through. We are confirming it now. This page updates by itself.</p>
+              {slow && <p className="give-ref">Confirmation is taking longer than usual. Your gift is safe. You can close this page.</p>}
+            </div>
+          )}
 
-          <button
-            className="give-button"
-            type="submit"
-            disabled={busy || !fees || phone.trim().length === 0 || (!anonymous && fullName.trim().length < 2)}
-          >
-            {fees ? `Give ${formatCedis(fees.totalPesewas)}` : "Give"}
-          </button>
-          <p className="tool-note">You will approve the payment on your phone. Maizz never sees your PIN.</p>
-        </form>
-      )}
+          {phase === "otp" && (
+            <div className="give-state">
+              <h2>Enter your code</h2>
+              <p>Your network sent you a code. Enter it to continue.</p>
+              <input
+                className="give-input"
+                inputMode="numeric"
+                aria-label="Code"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+              />
+              {error && <p className="give-error" role="alert">{error}</p>}
+              <button className="give-button" onClick={() => void sendOtp()} disabled={busy || otp.trim().length < 3}>
+                Continue
+              </button>
+            </div>
+          )}
 
-      {phase === "waiting" && (
-        <section className="give-state">
-          <h2>Approve on your phone</h2>
-          <p>
-            Check your phone for the {formatCedis(paidTotal)} request and enter your mobile money PIN there. This page
-            updates by itself.
-          </p>
-          {slow && <p className="tool-note">Still waiting. If nothing came, go back and try again.</p>}
-          <button className="give-link" onClick={again}>Go back</button>
+          {phase === "paid" && (
+            <div className="give-state">
+              <div className="give-tick" aria-hidden="true">
+                <svg width="34" height="34" viewBox="0 0 24 24">
+                  <path d="M5 12.5l4.5 4.5L19 7.5" />
+                </svg>
+              </div>
+              <h2>Thank you</h2>
+              <p>Your gift to {props.churchName} has been received. God bless you.</p>
+              <p className="give-ref">Reference {reference}</p>
+              <button className="give-link" onClick={again}>Give again</button>
+            </div>
+          )}
+
+          {phase === "failed" && (
+            <div className="give-state">
+              <h2>Payment not completed</h2>
+              <p className="give-error">{error || "The payment did not go through."}</p>
+              <button className="give-button" onClick={again}>Try again</button>
+            </div>
+          )}
         </section>
-      )}
-
-      {phase === "confirming" && (
-        <section className="give-state">
-          <h2>Confirming your gift</h2>
-          <p>Your payment went through. We are confirming it now. This page updates by itself.</p>
-          {slow && <p className="tool-note">Confirmation is taking longer than usual. Your gift is safe. You can close this page.</p>}
-        </section>
-      )}
-
-      {phase === "otp" && (
-        <section className="give-state">
-          <h2>Enter your code</h2>
-          <p>Your network sent you a code. Enter it to continue.</p>
-          <input
-            className="tool-input"
-            inputMode="numeric"
-            aria-label="Code"
-            value={otp}
-            onChange={(e) => setOtp(e.target.value)}
-          />
-          {error && <p className="tool-message" role="alert">{error}</p>}
-          <button className="give-button" onClick={() => void sendOtp()} disabled={busy || otp.trim().length < 3}>
-            Continue
-          </button>
-        </section>
-      )}
-
-      {phase === "paid" && (
-        <section className="give-state">
-          <h2>Thank you</h2>
-          <p>Your gift of {formatCedis(paidTotal)} has been received. God bless you.</p>
-          <p className="tool-note">Reference: {reference}</p>
-          <button className="give-link" onClick={again}>Give again</button>
-        </section>
-      )}
-
-      {phase === "failed" && (
-        <section className="give-state">
-          <h2>Not completed</h2>
-          <p>{error || "The payment did not go through."}</p>
-          <button className="give-button" onClick={again}>Try again</button>
-        </section>
-      )}
-    </main>
+      </main>
+    </div>
   );
 }

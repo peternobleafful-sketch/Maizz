@@ -1,10 +1,19 @@
-/* Maizz design rules: Black and Gold only. No gradients. Outfit and DM Mono. */
+/* Maizz design. Blue, white and ink. Soft gradients only in hero areas. Outfit and DM Mono. */
 :root {
-  --black: #000000;
-  --gold: #d4af37;
-  --gold-soft: #a88a2a;
+  --blue: #011bff;
+  --blue-deep: #0012c9;
+  --blue-glow: #7c8cff;
+  --ink: #0a0a0f;
+  --paper: #ffffff;
+  --mist: #eef0ff;
+  --line: #d6daf7;
+  --mute: #5a5f7a;
+  --lime: #b8f23c;
+  --danger: #c4182c;
   --font-sans: var(--font-outfit), system-ui, sans-serif;
   --font-mono: var(--font-dm-mono), ui-monospace, monospace;
+  --hero: radial-gradient(120% 90% at 90% 0%, var(--blue-glow) 0%, rgba(124, 140, 255, 0) 58%),
+    radial-gradient(100% 80% at 0% 100%, #000f99 0%, rgba(0, 15, 153, 0) 62%), var(--blue);
 }
 
 * {
@@ -15,113 +24,138 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--black);
-  color: var(--gold);
+  background: var(--paper);
+  color: var(--ink);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
 
 body {
   min-height: 100vh;
 }
 
+:focus-visible {
+  outline: 3px solid var(--blue-glow);
+  outline-offset: 2px;
+}
+
+/* Coming-soon home page */
 .hold {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  padding: 0 16px;
+  gap: 20px;
+  padding: 0 24px;
   text-align: center;
+  background: var(--hero);
+  color: var(--paper);
 }
 
-.hold h1 {
-  margin: 0;
-  font-size: clamp(3rem, 12vw, 6rem);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+.hold-logo {
+  width: min(280px, 70vw);
+  height: auto;
 }
 
 .hold p {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 0.95rem;
-  color: var(--gold-soft);
-  letter-spacing: 0.08em;
+  font-size: 1.1rem;
+  opacity: 0.9;
 }
 
-/* Private setup tool. Black and Gold only. */
+/* Owner tools (setup check, churches) */
 .tool {
-  max-width: 560px;
+  max-width: 600px;
   margin: 0 auto;
-  padding: 40px 16px 80px;
+  padding: 32px 16px 80px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.tool-logo {
+  height: 28px;
+  width: auto;
+  align-self: flex-start;
+  margin-bottom: 8px;
 }
 
 .tool h1 {
   margin: 0;
   font-weight: 600;
   font-size: 2rem;
+  letter-spacing: -0.01em;
 }
 
 .tool h2 {
   margin: 0;
-  font-weight: 500;
-  font-size: 1.15rem;
+  font-weight: 600;
+  font-size: 1.2rem;
 }
 
 .tool-note {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: var(--gold-soft);
+  font-size: 0.9rem;
+  color: var(--mute);
   line-height: 1.5;
 }
 
 .tool-label {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: var(--gold-soft);
-  letter-spacing: 0.06em;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--mute);
 }
 
 .tool-input {
   width: 100%;
-  padding: 12px;
-  background: var(--black);
-  color: var(--gold);
-  border: 1px solid var(--gold);
-  border-radius: 6px;
-  font-family: var(--font-mono);
+  min-height: 48px;
+  padding: 10px 14px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  font-family: var(--font-sans);
   font-size: 1rem;
+}
+
+.tool-input:focus {
+  border-color: var(--blue);
+  outline: 3px solid rgba(1, 27, 255, 0.16);
 }
 
 .tool-button {
   align-self: flex-start;
-  padding: 12px 20px;
-  background: var(--gold);
-  color: var(--black);
-  border: 1px solid var(--gold);
-  border-radius: 6px;
+  min-height: 46px;
+  padding: 10px 20px;
+  background: var(--blue);
+  color: var(--paper);
+  border: 0;
+  border-radius: 12px;
   font-family: var(--font-sans);
   font-weight: 600;
   font-size: 1rem;
   cursor: pointer;
+  transition: background 0.15s, transform 0.12s;
+}
+
+.tool-button:hover {
+  background: var(--blue-deep);
+}
+
+.tool-button:active {
+  transform: scale(0.98);
 }
 
 .tool-button:disabled {
-  background: var(--black);
-  color: var(--gold-soft);
-  border-color: var(--gold-soft);
+  background: #c9cef5;
   cursor: not-allowed;
+  transform: none;
 }
 
 .tool-message {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   line-height: 1.5;
 }
 
@@ -138,7 +172,7 @@ body {
   display: flex;
   gap: 12px;
   align-items: flex-start;
-  border-top: 1px solid var(--gold-soft);
+  border-top: 1px solid var(--line);
   padding-top: 12px;
 }
 
@@ -146,92 +180,181 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   line-height: 1.4;
 }
 
 .tool-check span {
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  color: var(--gold-soft);
+  font-size: 0.88rem;
+  color: var(--mute);
 }
 
 .tag {
   flex: none;
-  min-width: 52px;
+  min-width: 56px;
   text-align: center;
-  padding: 4px 8px;
-  border: 1px solid var(--gold);
-  border-radius: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
   font-family: var(--font-mono);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 .tag-pass {
-  background: var(--gold);
-  color: var(--black);
+  background: var(--lime);
+  color: var(--ink);
 }
 
 .tag-fix {
-  background: var(--black);
-  color: var(--gold);
-  border-style: dashed;
+  background: var(--paper);
+  color: var(--blue);
+  border: 1.5px dashed var(--blue);
 }
 
 .tool-section {
   margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid var(--gold);
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-/* Giving page. Black and Gold only. No gradients. */
+/* Giving page: a blue field with the amount at the top, and one white sheet below it. */
+.give-wrap {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--hero);
+}
+
 .give {
   max-width: 480px;
+  min-height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
-  padding: 32px 16px 80px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
-.give-head h1 {
-  margin: 4px 0 0;
-  font-weight: 600;
-  font-size: 1.8rem;
-  line-height: 1.2;
+.give-hero {
+  padding: 20px 20px 28px;
+  color: var(--paper);
 }
 
-.give-brand {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  letter-spacing: 0.3em;
-  color: var(--gold-soft);
+.give-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.give-logo {
+  height: 26px;
+  width: auto;
 }
 
 .give-test {
   margin: 0;
-  padding: 8px 12px;
-  border: 1px dashed var(--gold);
-  border-radius: 6px;
-  font-family: var(--font-mono);
+  padding: 4px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
   font-size: 0.8rem;
 }
 
-.give-form,
-.give-state {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.give-church {
+  margin: 28px 0 0;
+  font-size: 1.1rem;
+  font-weight: 500;
+  opacity: 0.92;
 }
 
-.give-state p {
-  margin: 0;
-  line-height: 1.5;
+.give-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.give-cedi {
+  font-size: 1.5rem;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.give-figure {
+  width: 100%;
+  min-width: 0;
+  padding: 0 0 4px;
+  background: transparent;
+  color: var(--paper);
+  border: 0;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 0;
+  font-family: var(--font-sans);
+  font-size: clamp(3rem, 16vw, 4.5rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.give-figure::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.give-figure:focus {
+  outline: 0;
+  border-bottom-color: var(--paper);
+}
+
+.give-total {
+  margin: 6px 0 0;
+  font-size: clamp(2.6rem, 14vw, 4rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.give-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.give-pill {
+  min-height: 44px;
+  min-width: 64px;
+  padding: 8px 18px;
+  background: transparent;
+  color: var(--paper);
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.give-pill.on {
+  background: var(--paper);
+  color: var(--blue);
+  border-color: var(--paper);
+}
+
+.give-sheet {
+  flex: 1;
+  background: var(--paper);
+  border-radius: 28px 28px 0 0;
+  padding: 26px 20px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.give-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .give-group {
@@ -240,7 +363,14 @@ body {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+}
+
+.give-label {
+  padding: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--mute);
 }
 
 .give-chips {
@@ -251,88 +381,274 @@ body {
 
 .give-chip {
   min-height: 44px;
-  padding: 10px 16px;
-  background: var(--black);
-  color: var(--gold);
-  border: 1px solid var(--gold-soft);
-  border-radius: 6px;
+  padding: 8px 16px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
   font-family: var(--font-sans);
   font-size: 1rem;
   cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.give-chip:hover {
+  border-color: var(--blue);
 }
 
 .give-chip.on {
-  background: var(--gold);
-  color: var(--black);
-  border-color: var(--gold);
-  font-weight: 600;
+  background: var(--blue);
+  color: var(--paper);
+  border-color: var(--blue);
+  font-weight: 500;
+}
+
+.give-input {
+  width: 100%;
+  min-height: 54px;
+  padding: 0 16px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  font-family: var(--font-sans);
+  font-size: 1.05rem;
+}
+
+.give-input:focus {
+  border-color: var(--blue);
+  outline: 3px solid rgba(1, 27, 255, 0.16);
 }
 
 .give-check {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
-  font-size: 0.95rem;
+  font-size: 1rem;
 }
 
 .give-check input {
-  width: 22px;
-  height: 22px;
-  accent-color: var(--gold);
+  width: 24px;
+  height: 24px;
+  accent-color: var(--blue);
 }
 
 .give-sum {
   margin: 0;
-  padding: 12px;
-  border: 1px solid var(--gold);
-  border-radius: 6px;
-  font-family: var(--font-mono);
-  font-size: 0.95rem;
-  line-height: 1.5;
+  padding: 16px;
+  background: var(--mist);
+  border-radius: 18px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
-.give-sum span {
-  font-size: 0.8rem;
-  color: var(--gold-soft);
+.give-row {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  font-variant-numeric: tabular-nums;
+}
+
+.give-row span:first-child {
+  display: flex;
+  flex: 1;
+  color: var(--mute);
+}
+
+.give-row span:first-child::after {
+  content: "";
+  flex: 1;
+  margin: 0 8px 5px;
+  border-bottom: 2px dotted var(--line);
+}
+
+.give-row.big {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.give-row.big span:first-child {
+  color: var(--ink);
+}
+
+.give-sum small {
+  color: var(--mute);
+  font-size: 0.88rem;
 }
 
 .give-button {
-  min-height: 52px;
+  width: 100%;
+  min-height: 58px;
   padding: 14px 20px;
-  background: var(--gold);
-  color: var(--black);
-  border: 1px solid var(--gold);
-  border-radius: 6px;
+  background: var(--blue);
+  color: var(--paper);
+  border: 0;
+  border-radius: 16px;
   font-family: var(--font-sans);
   font-weight: 600;
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   cursor: pointer;
+  transition: background 0.15s, transform 0.12s;
+}
+
+.give-button:hover {
+  background: var(--blue-deep);
+}
+
+.give-button:active {
+  transform: scale(0.98);
 }
 
 .give-button:disabled {
-  background: var(--black);
-  color: var(--gold-soft);
-  border-color: var(--gold-soft);
+  background: #c9cef5;
   cursor: not-allowed;
+  transform: none;
+}
+
+.give-safe {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--mute);
+  line-height: 1.4;
+}
+
+.give-safe svg {
+  flex: none;
+}
+
+.give-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.95rem;
+  line-height: 1.45;
 }
 
 .give-link {
   align-self: flex-start;
-  padding: 8px 0;
+  padding: 10px 0;
   background: none;
   border: 0;
-  color: var(--gold);
+  color: var(--blue);
   text-decoration: underline;
   font-family: var(--font-sans);
   font-size: 1rem;
   cursor: pointer;
 }
 
+.give-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+
 .give-state h2 {
   margin: 0;
-  font-weight: 500;
-  font-size: 1.4rem;
+  font-weight: 600;
+  font-size: 1.6rem;
+  letter-spacing: -0.01em;
+}
+
+.give-state p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.give-ref {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--mute);
+  word-break: break-all;
+}
+
+/* Waiting: the ring answers "check your phone". */
+.give-pulse {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--mist);
+  display: grid;
+  place-items: center;
+}
+
+.give-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--blue);
+  animation: give-ring 1.6s ease-out infinite;
+}
+
+/* Paid: the one moment of delight. The tick draws itself. */
+.give-tick {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--lime);
+  display: grid;
+  place-items: center;
+}
+
+.give-tick path {
+  stroke: var(--ink);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  animation: give-draw 0.5s 0.15s ease-out forwards;
+}
+
+@keyframes give-ring {
+  from {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  to {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+
+@keyframes give-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .give-pulse::after {
+    animation: none;
+    opacity: 0.5;
+  }
+  .give-tick path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .tool-button,
+  .give-button,
+  .give-chip,
+  .give-pill {
+    transition: none;
+  }
+}
+
+/* On wider screens the page is a phone-width column on the blue field. */
+@media (min-width: 560px) {
+  .give-wrap {
+    padding: 32px 0;
+  }
+  .give {
+    min-height: 0;
+  }
+  .give-sheet {
+    border-radius: 28px;
+  }
 }

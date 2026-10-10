@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Outfit, DM_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -19,6 +19,8 @@ export const metadata: Metadata = {
   title: "Maizz",
   description: "Giving for churches in Ghana.",
 };
+
+export const viewport: Viewport = { themeColor: "#011bff" };
 
 export default function RootLayout({
   children,

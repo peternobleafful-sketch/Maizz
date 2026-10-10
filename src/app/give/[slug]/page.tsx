@@ -35,11 +35,18 @@ export default async function GivePage({ params }: { params: Promise<{ slug: str
   const found = await lookup(slug);
   if ("error" in found) {
     return (
-      <main className="give">
-        <p className="give-brand">MAIZZ</p>
-        <h1>Giving is not available right now</h1>
-        <p className="tool-note">Please try again in a few minutes.</p>
-      </main>
+      <div className="give-wrap">
+        <main className="give">
+          <header className="give-hero">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="give-logo" src="/brand/maizz-logo-white.png" alt="Maizz" width={1101} height={296} />
+            <p className="give-church">Giving is not available right now</p>
+          </header>
+          <section className="give-sheet">
+            <p>Please try again in a few minutes.</p>
+          </section>
+        </main>
+      </div>
     );
   }
   if (!found.church) notFound();

@@ -77,3 +77,7 @@ Givers cover Paystack's 1.95% and Maizz's own 1%, so the church receives the exa
 - `/setup-check` has a Churches section: add a church (starts pending), set up its payout account (bank or mobile money, from Paystack's Ghana list), check the account holder's name Paystack returns, then activate. A church cannot be activated without a payout account and your confirmation.
 - Each gift is split at payment time: the church's payout account receives the gift exactly; Maizz keeps its 1% and pays the provider's cut out of the rest. Maizz keeps only the last 4 digits of a payout account number.
 - The giving page for a church is `/give/<church-slug>` and works only while the church is active.
+
+## Look and feel
+
+Blue (#011BFF), white and ink, in the spirit of atom.money. The giving page is a blue field with the amount at the top and one white sheet below. Logo files are in `public/brand`. Fonts Outfit and DM Mono. The design rule is in `CLAUDE.md`.

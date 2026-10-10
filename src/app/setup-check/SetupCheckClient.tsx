@@ -142,7 +142,9 @@ export default function SetupCheckClient() {
 
   return (
     <main className="tool">
-      <h1>Maizz setup check</h1>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="tool-logo" src="/brand/maizz-logo-ink.png" alt="Maizz" width={1101} height={296} />
+      <h1>Setup check</h1>
       <p className="tool-note">
         Private. Enter your access token to test the settings. No keys are ever shown here.
       </p>
