@@ -41,7 +41,7 @@ These are Isaac's rules. Follow them in every step. Update the status and the re
 ## Reviewer list: things the independent reviewer should look at
 
 Webhook and payments
-- `src/lib/payments/paystack.ts`: signature check, status mapping, and the refund notice fields (not yet confirmed against a real test run).
+- `src/lib/payments/paystack.ts`: signature check, status mapping, and the refund notice fields (confirmed against a real test-mode refund on 10 Oct 2026: Paystack showed the payment as "reversed" and the refund notice was recorded in the ledger).
 - `src/lib/payments/webhookHandler.ts`: out-of-order and late notices, refunds larger than paid, failed-payment detection (currently only through verify), what happens on an amount mismatch (logged, not recorded; needs a review queue).
 - `supabase/migrations/0004_status_rules.sql`: once paid, a gift stays paid; refunds reduce a church by at most the gift amount. `src/lib/reconcile.ts`: settle and nightly check, abandon after 2 hours, 40-second time budget and 100-gift batches (large volumes need a better job runner), notice and check share one event id so a payment is recorded once.
 - Refunds: `/api/admin/refund` (test mode only) and the notice-driven recording; cumulative refunds cannot exceed what was paid; a full refund returns the fee too (business decision to confirm); who is allowed to refund in the live app (step 9).
