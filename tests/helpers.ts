@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import type { AuditEntry, AuditLog } from "../src/lib/audit";
 import type { EventStatus, GiftRecord, Ledger, NewEvent, NewGift } from "../src/lib/ledger";
 
 export interface Call {
@@ -80,5 +81,33 @@ export class FakeLedger implements Ledger {
     const mine = this.events.filter((e) => e.giftId === gift.id);
     const last = mine[mine.length - 1];
     return { status: last?.status ?? "pending", wasPaid: mine.some((e) => e.status === "succeeded") };
+  }
+}
+
+/** An in-memory audit log. shift(n) makes everything n minutes older, to test lock-outs wearing off. */
+export class FakeAudit implements AuditLog {
+  entries: (AuditEntry & { at: number })[] = [];
+  failReads = false;
+  failWrites = false;
+
+  async record(entry: AuditEntry): Promise<void> {
+    if (this.failWrites) throw new Error("audit down");
+    this.entries.push({ ...entry, at: Date.now() });
+  }
+
+  async countSince(action: string, minutes: number, sourceKey?: string): Promise<number> {
+    if (this.failReads) throw new Error("audit down");
+    const cutoff = Date.now() - minutes * 60_000;
+    return this.entries.filter(
+      (e) => e.action === action && e.at >= cutoff && (sourceKey === undefined || e.sourceKey === sourceKey),
+    ).length;
+  }
+
+  shift(minutes: number): void {
+    for (const e of this.entries) e.at -= minutes * 60_000;
+  }
+
+  actions(): string[] {
+    return this.entries.map((e) => e.action);
   }
 }

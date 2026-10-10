@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPaystackProvider } from "../src/lib/payments/paystack";
 import { processWebhook } from "../src/lib/payments/webhookHandler";
-import { FakeLedger, mockFetch, sign } from "./helpers";
+import { FakeAudit, FakeLedger, mockFetch, sign } from "./helpers";
 
 const SECRET = "sk_test_abc123";
 const provider = createPaystackProvider({ secretKey: SECRET, fetchFn: mockFetch([]).fn });
@@ -14,6 +14,7 @@ beforeEach(async () => {
   vi.spyOn(console, "log").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
   ledger = new FakeLedger();
+  audit = new FakeAudit();
   const gift = await ledger.createGift({
     reference: REF,
     churchId: "church-1",
@@ -24,10 +25,12 @@ beforeEach(async () => {
   giftId = gift.id;
 });
 
+let audit: FakeAudit;
+
 function send(payload: unknown, opts: { signature?: string | null; secret?: string } = {}) {
   const rawBody = typeof payload === "string" ? payload : JSON.stringify(payload);
   const signature = opts.signature === undefined ? sign(rawBody, opts.secret ?? SECRET) : opts.signature;
-  return processWebhook({ provider, ledger, rawBody, signature });
+  return processWebhook({ provider, ledger, rawBody, signature, audit });
 }
 
 const success = (over: Record<string, unknown> = {}) => ({
@@ -174,5 +177,48 @@ describe("logs", () => {
     await send(success({ amount: 5 }));
     const everything = [...out.mock.calls, ...err.mock.calls].flat().join(" ");
     expect(everything).not.toContain(SECRET);
+  });
+});
+
+describe("audit trail", () => {
+  it("records a refused signature, without the body", async () => {
+    await send(success(), { signature: "bad" });
+    expect(audit.actions()).toEqual(["webhook.bad_signature"]);
+    expect(audit.entries[0]).toMatchObject({ actor: "webhook", outcome: "denied" });
+  });
+
+  it("records an amount mismatch against the gift reference", async () => {
+    await send(success({ amount: 5 }));
+    expect(audit.entries[0]).toMatchObject({
+      action: "webhook.amount_mismatch",
+      target: REF,
+      detail: { expected_pesewas: 10_150, received_pesewas: 5 },
+    });
+    expect(ledger.events).toHaveLength(0);
+  });
+
+  it("records a bad payload", async () => {
+    await send("not json");
+    expect(audit.actions()).toEqual(["webhook.bad_payload"]);
+  });
+
+  it("writes nothing for a normal genuine payment", async () => {
+    await send(success());
+    expect(audit.entries).toHaveLength(0);
+  });
+
+  it("stops writing junk after the throttle", async () => {
+    for (let i = 0; i < 30; i++) await send(success(), { signature: "bad" });
+    expect(audit.entries).toHaveLength(20);
+  });
+
+  it("still records the payment when the audit log is down", async () => {
+    audit.failReads = true;
+    audit.failWrites = true;
+    const res = await send(success());
+    expect(res.status).toBe(200);
+    expect(ledger.events).toHaveLength(1);
+    const bad = await send(success(), { signature: "bad" });
+    expect(bad.status).toBe(401);
   });
 });

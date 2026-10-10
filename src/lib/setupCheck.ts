@@ -9,7 +9,7 @@ export interface CheckResult {
   hint: string;
 }
 
-const LEDGER_OBJECTS = ["churches", "givers", "gifts", "gift_events", "gift_status", "church_totals"] as const;
+const LEDGER_OBJECTS = ["churches", "givers", "gifts", "gift_events", "gift_status", "church_totals", "audit_log"] as const;
 
 function jwtRole(key: string): string | null {
   const parts = key.split(".");
@@ -122,14 +122,14 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
     const allOk = codes.every((c) => c === 200);
     add(
       "ledger",
-      "Ledger from step 2 is installed and reachable",
+      "Ledger and audit log are installed and reachable",
       allOk,
       allOk
-        ? "All ledger tables and views were found."
+        ? "All ledger tables, views and the audit log were found."
         : rejected
           ? "Supabase rejected the key. Copy the secret key again, with no spaces."
           : missing.length > 0
-            ? `Not found: ${missing.join(", ")}. Run the 0001_ledger.sql file in the Supabase SQL Editor.`
+            ? `Not found: ${missing.join(", ")}. Run the missing SQL file (0001_ledger.sql, then 0002_audit.sql) in the Supabase SQL Editor.`
             : unreachable
               ? "Could not reach Supabase just now. Try again in a minute."
               : "Supabase gave an unexpected answer. Tell Claude.",
@@ -145,7 +145,7 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
         : "A request with no key was not refused. Tell Claude straight away.",
     );
   } else {
-    add("ledger", "Ledger from step 2 is installed and reachable", false, "Fix the Supabase settings above first.");
+    add("ledger", "Ledger and audit log are installed and reachable", false, "Fix the Supabase settings above first.");
     add("locked", "Ledger refuses requests with no key", false, "Fix the Supabase settings above first.");
   }
 

@@ -1,3 +1,4 @@
+import type { AuditEntry, AuditLog } from "../audit";
 import type { Ledger } from "../ledger";
 import { log, logError } from "../log";
 import {
@@ -27,8 +28,22 @@ export async function processWebhook(args: {
   ledger: Ledger;
   rawBody: string;
   signature: string | null;
+  /** Permanent record of refused and odd notices. Writing to it never blocks recording a payment. */
+  audit?: AuditLog;
 }): Promise<WebhookResponse> {
-  const { provider, ledger, rawBody, signature } = args;
+  const { provider, ledger, rawBody, signature, audit } = args;
+
+  // Best effort. If the audit log is down we still log to the console and carry on.
+  // A throttle stops an attacker filling the audit log with junk.
+  async function note(entry: Omit<AuditEntry, "actor">, throttle?: { max: number; minutes: number }): Promise<void> {
+    if (!audit) return;
+    try {
+      if (throttle && (await audit.countSince(entry.action, throttle.minutes)) >= throttle.max) return;
+      await audit.record({ ...entry, actor: "webhook" });
+    } catch {
+      logError("audit.write_failed", { action: entry.action });
+    }
+  }
 
   if (Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES) {
     return { status: 413, body: { ok: false, result: "too_large" } };
@@ -40,10 +55,18 @@ export async function processWebhook(args: {
   } catch (err) {
     if (err instanceof WebhookSignatureError) {
       logError("webhook.bad_signature", { provider: provider.name });
+      await note(
+        { action: "webhook.bad_signature", outcome: "denied", detail: { provider: provider.name } },
+        { max: 20, minutes: 10 },
+      );
       return { status: 401, body: { ok: false, result: "bad_signature" } };
     }
     if (err instanceof WebhookPayloadError) {
       logError("webhook.bad_payload", { provider: provider.name, reason: err.message });
+      await note(
+        { action: "webhook.bad_payload", outcome: "failed", detail: { provider: provider.name, reason: err.message } },
+        { max: 20, minutes: 10 },
+      );
       return { status: 400, body: { ok: false, result: "bad_payload" } };
     }
     logError("webhook.parse_failed", { provider: provider.name });
@@ -73,6 +96,17 @@ export async function processWebhook(args: {
           received: event.amountPesewas ?? null,
           currency: event.currency ?? null,
         });
+        await note({
+          action: "webhook.amount_mismatch",
+          outcome: "denied",
+          target: gift.reference,
+          detail: {
+            provider: provider.name,
+            expected_pesewas: gift.totalPesewas,
+            received_pesewas: event.amountPesewas ?? null,
+            received_currency: event.currency ?? null,
+          },
+        });
         return { status: 200, body: { ok: true, result: "amount_mismatch_not_recorded" } };
       }
       const outcome = await ledger.addEvent({
@@ -100,6 +134,12 @@ export async function processWebhook(args: {
     const refunded = event.amountPesewas ?? 0;
     if (refunded <= 0 || refunded > gift.totalPesewas) {
       logError("webhook.refund_amount_invalid", { giftId: gift.id, refunded, total: gift.totalPesewas });
+      await note({
+        action: "webhook.refund_invalid",
+        outcome: "denied",
+        target: gift.reference,
+        detail: { provider: provider.name, refunded_pesewas: refunded, total_pesewas: gift.totalPesewas },
+      });
       return { status: 200, body: { ok: true, result: "refund_amount_invalid_not_recorded" } };
     }
     const outcome = await ledger.addEvent({

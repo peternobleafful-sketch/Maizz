@@ -33,10 +33,11 @@ export default function SetupCheckClient() {
         setMessage("The setup check is switched off. Add SETUP_CHECK_TOKEN in Vercel (at least 24 characters) and redeploy.");
       } else if (res.status === 401) {
         setChecks(null);
-        setMessage("That access token is not right.");
+        setMessage("That access token is not right. Too many wrong attempts will lock this page for 15 minutes.");
       } else if (!res.ok) {
         setChecks(null);
-        setMessage("Something went wrong. Try again.");
+        const data: { message?: string } = await res.json().catch(() => ({}));
+        setMessage(data.message ?? "Something went wrong. Try again.");
       } else {
         const data: { checks: Check[] } = await res.json();
         setChecks(data.checks);

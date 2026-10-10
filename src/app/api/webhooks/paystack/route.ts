@@ -1,3 +1,4 @@
+import { getAudit } from "@/lib/audit";
 import { logError } from "@/lib/log";
 import { getLedger, getPaymentProvider } from "@/lib/payments";
 import { processWebhook } from "@/lib/payments/webhookHandler";
@@ -9,9 +10,11 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   let provider;
   let ledger;
+  let audit;
   try {
     provider = getPaymentProvider();
     ledger = getLedger();
+    audit = getAudit();
   } catch (err) {
     logError("webhook.misconfigured", { reason: err instanceof Error ? err.message : "unknown" });
     return Response.json({ ok: false, result: "misconfigured" }, { status: 500 });
@@ -23,6 +26,7 @@ export async function POST(req: Request) {
     ledger,
     rawBody,
     signature: req.headers.get("x-paystack-signature"),
+    audit,
   });
   return Response.json(result.body, { status: result.status });
 }

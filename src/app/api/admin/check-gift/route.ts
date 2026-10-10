@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/adminAuth";
+import { openAdminRoute } from "@/lib/adminAuth";
 import { logError } from "@/lib/log";
 import { getLedger, getPaymentProvider } from "@/lib/payments";
 import { ProviderError } from "@/lib/payments/types";
@@ -8,11 +8,13 @@ export const dynamic = "force-dynamic";
 
 // Private tool: asks Paystack directly about a test gift, and shows what the ledger recorded.
 export async function GET(req: Request) {
-  const denied = requireAdmin(req, process.env);
+  const reference = new URL(req.url).searchParams.get("reference") ?? "";
+  const valid = /^mz_test_[a-f0-9]{24}$/.test(reference);
+
+  const denied = await openAdminRoute(req, process.env, "admin.check_gift", valid ? reference : undefined);
   if (denied) return denied;
 
-  const reference = new URL(req.url).searchParams.get("reference") ?? "";
-  if (!/^mz_test_[a-f0-9]{24}$/.test(reference)) {
+  if (!valid) {
     return Response.json({ error: "That is not a Maizz test reference." }, { status: 400 });
   }
 

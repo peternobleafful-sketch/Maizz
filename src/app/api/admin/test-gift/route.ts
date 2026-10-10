@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/adminAuth";
+import { openAdminRoute } from "@/lib/adminAuth";
 import { classifyPaystackKey } from "@/lib/config";
 import { logError } from "@/lib/log";
 import { normaliseGhanaPhone } from "@/lib/phone";
@@ -14,7 +14,7 @@ const TEST_AMOUNT_PESEWAS = 100; // GH₵1.00
 
 // Private tool for test mode only: starts a GH₵1 mobile money test gift for a "Maizz Test Church".
 export async function POST(req: Request) {
-  const denied = requireAdmin(req, process.env);
+  const denied = await openAdminRoute(req, process.env, "admin.test_gift");
   if (denied) return denied;
 
   if (classifyPaystackKey(process.env.PAYSTACK_SECRET_KEY) !== "test") {

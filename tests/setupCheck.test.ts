@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { requireAdmin } from "../src/lib/adminAuth";
 import { runSetupChecks } from "../src/lib/setupCheck";
 import { mockFetch } from "./helpers";
 
@@ -10,7 +9,7 @@ const GOOD_ENV = {
 };
 
 const ok = { status: 200, json: [] };
-const all200 = [ok, ...Array.from({ length: 6 }, () => ok), { status: 401, json: {} }];
+const all200 = [ok, ...Array.from({ length: 7 }, () => ok), { status: 401, json: {} }];
 
 function byId(results: Awaited<ReturnType<typeof runSetupChecks>>) {
   return Object.fromEntries(results.map((r) => [r.id, r]));
@@ -63,7 +62,7 @@ describe("setup check", () => {
   });
 
   it("says when the ledger file has not been run", async () => {
-    const replies = [ok, ok, { status: 404, json: {} }, ok, ok, ok, ok, { status: 401, json: {} }];
+    const replies = [ok, ok, { status: 404, json: {} }, ok, ok, ok, ok, ok, { status: 401, json: {} }];
     const r = byId(await runSetupChecks(GOOD_ENV, mockFetch(replies).fn));
     expect(r.ledger!.ok).toBe(false);
     expect(r.ledger!.hint).toMatch(/givers/);
@@ -71,7 +70,7 @@ describe("setup check", () => {
   });
 
   it("flags a ledger that is open to requests with no key", async () => {
-    const replies = [ok, ...Array.from({ length: 6 }, () => ok), { status: 200, json: [] }];
+    const replies = [ok, ...Array.from({ length: 7 }, () => ok), { status: 200, json: [] }];
     const r = byId(await runSetupChecks(GOOD_ENV, mockFetch(replies).fn));
     expect(r.locked!.ok).toBe(false);
   });
@@ -89,27 +88,5 @@ describe("setup check", () => {
     };
     const text = JSON.stringify(await runSetupChecks(env, mockFetch(all200).fn));
     expect(text).not.toContain("SUPERSECRET");
-  });
-});
-
-describe("admin access", () => {
-  const TOKEN = "a-long-random-token-1234567890";
-  const req = (header?: string) =>
-    new Request("https://x.test/api/setup-check", { headers: header ? { authorization: header } : {} });
-
-  it("is switched off with no token set, or one that is too short", () => {
-    expect(requireAdmin(req(`Bearer ${TOKEN}`), {})!.status).toBe(404);
-    expect(requireAdmin(req("Bearer short"), { SETUP_CHECK_TOKEN: "short" })!.status).toBe(404);
-  });
-
-  it("refuses a missing or wrong token", () => {
-    expect(requireAdmin(req(), { SETUP_CHECK_TOKEN: TOKEN })!.status).toBe(401);
-    expect(requireAdmin(req("Bearer nope"), { SETUP_CHECK_TOKEN: TOKEN })!.status).toBe(401);
-    expect(requireAdmin(req(TOKEN), { SETUP_CHECK_TOKEN: TOKEN })!.status).toBe(401);
-    expect(requireAdmin(req("Bearer "), { SETUP_CHECK_TOKEN: TOKEN })!.status).toBe(401);
-  });
-
-  it("lets the right token through", () => {
-    expect(requireAdmin(req(`Bearer ${TOKEN}`), { SETUP_CHECK_TOKEN: TOKEN })).toBeNull();
   });
 });

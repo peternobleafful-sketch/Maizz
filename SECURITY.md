@@ -14,24 +14,24 @@ These are Isaac's rules. Follow them in every step. Update the status and the re
 8. **Automatic backups, and a written plan** for what to do if something goes wrong.
 9. **Independent security review before any live money.** Remind Isaac before step 10, and whenever real money, a live key or a first church is mentioned. Keep the reviewer list below up to date.
 
-## Status after step 3
+## Status after the safety fixes (after step 3)
 
 | Rule | Status | Notes |
 | --- | --- | --- |
 | 1 Webhook signatures | Meets | HMAC-SHA512 check, constant-time compare, before anything is read or recorded. Amount and currency must match the gift. Repeats recorded once. Tested, including with the check switched off. |
 | 2 No secrets in code or chat | Meets | Scan of the repo found none. `.env` files are ignored by git. Setup page never returns a value. Keep it this way. |
-| 3 Sign-in limits and 2FA | Gap | No church sign-in exists yet (step 9). The private setup page has a long access token but no attempt limit. 2FA must be switched on for GitHub, Vercel, Supabase and Paystack accounts (Isaac's action). |
+| 3 Sign-in limits and 2FA | Partly | Admin tools now lock for 15 minutes after 5 wrong tokens from one source (20 from all sources), counted in the database, tested. Church sign-in does not exist yet (step 9). 2FA must be switched on for GitHub, Vercel, Supabase and Paystack accounts (Isaac's action). |
 | 4 No card numbers or PINs | Meets | Mobile money PIN is entered on the giver's phone. Cards use Paystack's page. Maizz stores gift records and (later) names, phone numbers and emails, which are personal data for the Data Protection Commission. |
-| 5 Logging | Partly | Every gift state change is its own append-only row in `gift_events`. But admin actions and rejected webhooks only go to Vercel's short-lived logs, and giver edits (anonymising) are not logged. |
+| 5 Logging | Mostly meets | Gift changes are append-only rows in `gift_events`. Admin actions, failed admin tokens, refused webhooks, amount mismatches and giver edits/anonymising/church creation go to the append-only `audit_log` (no secrets, phone numbers or names). Needs `0002_audit.sql` run in Supabase. Not yet backed up (rule 8). |
 | 6 Alerts | Not built | No error alerts (Sentry), no large-gift alert, no reconciliation yet (step 6). |
-| 7 Least access | Partly | One all-powerful Supabase key serves the public webhook and the admin tools. Update and delete are already removed from the ledger tables for that key. Admin tools refuse anything but a test key. |
+| 7 Least access | Partly | One all-powerful Supabase key serves the public webhook and the admin tools. Update and delete are already removed from the ledger tables for that key. Admin tools refuse anything but a test key. They also stop working if the audit log is unreachable (fail closed). |
 | 8 Backups and incident plan | Gap | Supabase Free has no automatic backups and pauses after a week of no use. No written incident plan yet. |
 | 9 Independent review | Pending | Reviewer list below. Do not use a live key or take real money before it is done. |
 
 ## Fixes planned (in this order)
 
-- **Audit trail (rule 5):** an append-only `audit_log` table in the database for admin actions, rejected webhooks and giver anonymisation, with no secrets or phone numbers in it. Add a trigger so giver edits are recorded.
-- **Attempt limits (rule 3):** count failed access-token attempts in the database and lock the setup tools for a while after repeated failures. Use Supabase Auth two-step sign-in for church users in step 9.
+- ~~**Audit trail (rule 5):**~~ DONE: an append-only `audit_log` table in the database for admin actions, rejected webhooks and giver anonymisation, with no secrets or phone numbers in it. Add a trigger so giver edits are recorded.
+- ~~**Attempt limits (rule 3):**~~ DONE for admin tools: count failed access-token attempts in the database and lock the setup tools for a while after repeated failures. Use Supabase Auth two-step sign-in for church users in step 9.
 - **Alerts (rule 6):** Sentry for errors; alert rows and an email for failed signatures, amount mismatches, large gifts; daily reconciliation in step 6.
 - **Least access (rule 7):** a narrower database role (or database functions) for the webhook, so it can only read gifts and add events. Remove the Supabase and Paystack keys from the Vercel Development environment, since only Production needs them. Move the admin tools out of the public app before live.
 - **Backups and plan (rule 8):** move the database to Supabase Pro before any real data (daily backups kept 7 days), run a test restore, and write `docs/INCIDENT_RESPONSE.md` (who to call, how to pause payments, how to rotate keys, what to tell churches and the Data Protection Commission).
@@ -53,6 +53,7 @@ Ledger and database
 
 Access and secrets
 - Vercel environment settings: which keys exist in which environments, who can see them, and the `Sensitive` flag.
+- `supabase/migrations/0002_audit.sql`, `src/lib/audit.ts`: what is logged, scrubbing of secrets, source fingerprint (hashed address), throttle on webhook entries, whether audit rows need exporting off-site.
 - `src/lib/adminAuth.ts` and the `/setup-check`, `/api/admin/*` routes: token strength, attempt limiting, whether these should exist in the live app at all.
 - GitHub, Vercel, Supabase and Paystack account access: owners, 2FA, who can push to `main`, what the build assistant can push.
 - Rotation: how each key is replaced if it leaks.
