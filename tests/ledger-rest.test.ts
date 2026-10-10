@@ -103,3 +103,27 @@ describe("supabase ledger", () => {
     await expect(l.findGiftByReference("mz_ref_12345678")).rejects.toThrow();
   });
 });
+
+describe("supabase ledger: churches and givers", () => {
+  it("finds a church without ever creating one", async () => {
+    const { l, calls } = ledger([{ json: [{ id: "c1", name: "Grace" }] }, { json: [] }]);
+    expect(await l.findChurch("grace")).toEqual({ id: "c1", name: "Grace" });
+    expect(await l.findChurch("nope")).toBeNull();
+    expect(calls.every((c) => c.method === "GET")).toBe(true);
+  });
+
+  it("creates a giver with name and number only", async () => {
+    const { l, calls } = ledger([{ status: 201, json: [{ id: "u1" }] }]);
+    expect(await l.createGiver({ fullName: "Ama", phone: "0551234987" })).toBe("u1");
+    expect(calls[0]!.body).toEqual({ full_name: "Ama", phone: "0551234987" });
+  });
+
+  it("links a gift to a giver, or leaves it unlinked", async () => {
+    const { l, calls } = ledger([{ status: 201, json: [GIFT_ROW] }, { status: 201, json: [GIFT_ROW] }]);
+    const base = { reference: "mz_ref_12345678", churchId: "c1", giftType: "seed" as const, amountPesewas: 100, feePesewas: 2 };
+    await l.createGift({ ...base, giverId: "u1" });
+    await l.createGift(base);
+    expect((calls[0]!.body as Record<string, unknown>).giver_id).toBe("u1");
+    expect((calls[1]!.body as Record<string, unknown>).giver_id).toBeNull();
+  });
+});

@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { AuditEntry, AuditLog } from "../src/lib/audit";
-import type { EventStatus, GiftRecord, Ledger, NewEvent, NewGift } from "../src/lib/ledger";
+import type { EventStatus, GiftRecord, Ledger, NewEvent, NewGift, NewGiver } from "../src/lib/ledger";
 
 export interface Call {
   url: string;
@@ -48,6 +48,20 @@ export class FakeLedger implements Ledger {
     return `church-${slug}`;
   }
 
+  churches = new Map<string, { id: string; name: string }>();
+  giftGivers = new Map<string, string | undefined>();
+  givers: { id: string; fullName: string; phone: string }[] = [];
+
+  async findChurch(slug: string): Promise<{ id: string; name: string } | null> {
+    return this.churches.get(slug) ?? null;
+  }
+
+  async createGiver(g: NewGiver): Promise<string> {
+    const id = `giver-${this.givers.length + 1}`;
+    this.givers.push({ id, ...g });
+    return id;
+  }
+
   async createGift(g: NewGift): Promise<GiftRecord> {
     const gift: GiftRecord = {
       id: `gift-${this.gifts.length + 1}`,
@@ -57,6 +71,7 @@ export class FakeLedger implements Ledger {
       feePesewas: g.feePesewas,
       totalPesewas: g.amountPesewas + g.feePesewas,
     };
+    this.giftGivers.set(g.reference, g.giverId);
     this.gifts.push(gift);
     return gift;
   }

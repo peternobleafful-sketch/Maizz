@@ -3,7 +3,9 @@ import { assertPesewas } from "./money";
 // The only code that writes to the ledger. It talks to Supabase using the server's secret key.
 // The database itself refuses edits and deletes (see supabase/migrations/0001_ledger.sql).
 
-export type GiftType = "tithe" | "offering" | "thanksgiving" | "project" | "other";
+export const GIFT_TYPES = ["tithe", "offering", "thanksgiving", "seed", "building", "missions", "other"] as const;
+// "project" is an older value that stays valid in the database but is no longer offered.
+export type GiftType = (typeof GIFT_TYPES)[number] | "project";
 export type EventStatus = "pending" | "succeeded" | "failed" | "abandoned" | "refunded";
 
 export interface GiftRecord {
@@ -21,6 +23,13 @@ export interface NewGift {
   giftType: GiftType;
   amountPesewas: number;
   feePesewas: number;
+  /** Leave out for an anonymous gift: nothing about the giver is stored. */
+  giverId?: string;
+}
+
+export interface NewGiver {
+  fullName: string;
+  phone: string;
 }
 
 export interface NewEvent {
@@ -33,6 +42,9 @@ export interface NewEvent {
 
 export interface Ledger {
   getOrCreateChurch(slug: string, name: string): Promise<string>;
+  /** Looks a church up without ever creating one. */
+  findChurch(slug: string): Promise<{ id: string; name: string } | null>;
+  createGiver(giver: NewGiver): Promise<string>;
   createGift(gift: NewGift): Promise<GiftRecord>;
   findGiftByReference(reference: string): Promise<GiftRecord | null>;
   /** "duplicate" means this provider event was already recorded, which is fine. */
@@ -117,6 +129,21 @@ export function createSupabaseLedger(opts: {
   }
 
   return {
+    async findChurch(slug) {
+      const res = await request("GET", `churches?slug=eq.${encodeURIComponent(slug)}&select=id,name&limit=1`);
+      const found = (await rows(res, "church lookup"))[0];
+      return isRec(found) && typeof found.id === "string" && typeof found.name === "string"
+        ? { id: found.id, name: found.name }
+        : null;
+    },
+
+    async createGiver(giver) {
+      const res = await request("POST", "givers", { full_name: giver.fullName, phone: giver.phone }, "return=representation");
+      const created = (await rows(res, "giver creation"))[0];
+      if (!isRec(created) || typeof created.id !== "string") throw new LedgerError("Giver was not created");
+      return created.id;
+    },
+
     async getOrCreateChurch(slug, name) {
       const existing = await churchId(slug);
       if (existing) return existing;
@@ -139,6 +166,7 @@ export function createSupabaseLedger(opts: {
         {
           reference: gift.reference,
           church_id: gift.churchId,
+          giver_id: gift.giverId ?? null,
           gift_type: gift.giftType,
           amount_pesewas: gift.amountPesewas,
           fee_pesewas: gift.feePesewas,

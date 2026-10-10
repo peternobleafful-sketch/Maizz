@@ -64,6 +64,13 @@ App and platform
 - Logging: nothing sensitive in logs, how long they are kept, where alerts go.
 - Backups, restore test and the incident plan.
 
+Giving page (step 5): public routes `/api/checkout`, `/api/checkout/otp`, `/api/checkout/status`
+- `src/lib/checkout.ts` and the three routes: input checks, per-source limits (8 gift starts and 10 codes per 10 minutes, hashed address), refusal when the audit log is down, the status route has no limit (it only returns one word for an unguessable reference).
+- Personal data: giver name and phone are stored in `givers` unless the giver chose anonymous (then nothing is stored). Phone still goes to the payment provider. Retention and Data Protection Commission registration.
+- A stand-in email (giver@example.com) goes to the provider because givers are not asked for one. Replace with a real receipts address before live.
+- The giver is told thank you only from the ledger, not from the provider's immediate reply.
+- Giver-facing text never names the provider.
+
 Later steps to add to this list as they are built
 - Fees maths (step 4, `src/lib/fees.ts`): 1.95% assumed, rounded up, gross-up so the church gets the gift; rate 1.95% and no extra levies confirmed by Isaac with Paystack (rounding still to confirm); compare with the real fee Paystack reports per payment (step 6); payout fees (GH₵1 to mobile money, GH₵8 to bank) belong to step 7.
-- The checkout page and receipts (step 5), reconciliation and refunds (step 6), church sub-accounts and payouts (step 7), the Church Manager link (step 8), the church dashboard and its sign-in (step 9).
+- Receipts (step 5b), reconciliation and refunds (step 6), church sub-accounts and payouts (step 7), the Church Manager link (step 8), the church dashboard and its sign-in (step 9).

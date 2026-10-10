@@ -45,7 +45,7 @@ The database design lives in `supabase/migrations/0001_ledger.sql`.
 - `src/lib/config.ts`: refuses a live Paystack key unless `MAIZZ_ALLOW_LIVE=yes` (do not set it before the legal checks are done).
 - `src/lib/ledger.ts`: the only code that writes to the ledger.
 - `/setup-check`: private page that tests each setting without showing any value. Needs `SETUP_CHECK_TOKEN`. Also starts a GH₵1 test payment and checks the result.
-- Fees come in step 4. Failed-payment detection, refunds, late or out-of-order notices and daily reconciliation come in step 6.
+- Failed-payment detection, refunds, late or out-of-order notices and daily reconciliation come in step 6.
 - Paystack's exact test-mode behaviour for Ghana mobile money (and the refund notice fields) is to be confirmed against a real test run.
 
 ## Running it
@@ -55,3 +55,11 @@ npm run dev
 npm run typecheck
 npm test
 ```
+
+## Fees (step 4)
+
+Givers cover Paystack's 1.95%, so the church receives the exact gift (`src/lib/fees.ts`). Whole pesewas only; the fee is rounded up.
+
+## The giving page (step 5, test mode only)
+
+`/give/maizz-test-church` is the giver's page: amount (quick buttons or any amount), gift type, mobile money network and number, name or anonymous. It shows "Gift + fees = total" and says only "Maizz". The giver is told thank you only when the ledger says the gift succeeded. Only the test church can receive gifts until church sign-up (step 7). Run `supabase/migrations/0003_gift_types.sql` once in Supabase. Card and bank transfer come later.
