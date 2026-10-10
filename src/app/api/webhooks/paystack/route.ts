@@ -1,0 +1,28 @@
+import { logError } from "@/lib/log";
+import { getLedger, getPaymentProvider } from "@/lib/payments";
+import { processWebhook } from "@/lib/payments/webhookHandler";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+// Paystack posts payment notices here. Every notice is checked against its signature first.
+export async function POST(req: Request) {
+  let provider;
+  let ledger;
+  try {
+    provider = getPaymentProvider();
+    ledger = getLedger();
+  } catch (err) {
+    logError("webhook.misconfigured", { reason: err instanceof Error ? err.message : "unknown" });
+    return Response.json({ ok: false, result: "misconfigured" }, { status: 500 });
+  }
+
+  const rawBody = await req.text();
+  const result = await processWebhook({
+    provider,
+    ledger,
+    rawBody,
+    signature: req.headers.get("x-paystack-signature"),
+  });
+  return Response.json(result.body, { status: result.status });
+}

@@ -38,6 +38,16 @@ The database design lives in `supabase/migrations/0001_ledger.sql`.
 - `gift_status` and `church_totals`: read-only views for the current status and what each church has received.
 - Only the server (Supabase service role) can reach these tables.
 
+## The Paystack connection (step 3, test mode only)
+- `src/lib/payments/types.ts`: the one interface Maizz talks to (initialise, submit code, verify, refund, parse webhook, capabilities). A second provider later means another adapter, not an app rewrite.
+- `src/lib/payments/paystack.ts`: the Paystack adapter. Mobile money is charged directly from the Maizz page (givers see Maizz, not Paystack). Cards and bank transfer use Paystack's secure page.
+- `src/lib/payments/webhookHandler.ts` and `src/app/api/webhooks/paystack/route.ts`: receive Paystack's notices. A notice is refused unless its signature matches. A payment is only recorded as paid if the amount and currency match the gift exactly. A repeated notice is recorded once.
+- `src/lib/config.ts`: refuses a live Paystack key unless `MAIZZ_ALLOW_LIVE=yes` (do not set it before the legal checks are done).
+- `src/lib/ledger.ts`: the only code that writes to the ledger.
+- `/setup-check`: private page that tests each setting without showing any value. Needs `SETUP_CHECK_TOKEN`. Also starts a GH₵1 test payment and checks the result.
+- Fees come in step 4. Failed-payment detection, refunds, late or out-of-order notices and daily reconciliation come in step 6.
+- Paystack's exact test-mode behaviour for Ghana mobile money (and the refund notice fields) is to be confirmed against a real test run.
+
 ## Running it
 ```
 npm install
