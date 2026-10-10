@@ -2,8 +2,8 @@ import { assertPositivePesewas, type Pesewas } from "./money";
 
 // Fees. Givers cover them, so the church receives exactly the gift.
 // Paystack Ghana charges 1.95% on local cards and mobile money (no flat collection fee).
-// To be confirmed with Paystack in writing (rounding, any levy), and checked against the
-// real fee Paystack reports on each payment in step 6 (reconciliation).
+// Isaac confirmed with Paystack (10 Oct 2026): 1.95%, no extra levies. Rounding is still
+// unconfirmed, so it is checked against the real fee Paystack reports on each payment in step 6 (reconciliation).
 
 /** Basis points: 195 = 1.95%. */
 export const PROVIDER_FEE_BPS = 195;

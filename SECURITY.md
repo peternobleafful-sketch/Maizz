@@ -20,7 +20,7 @@ These are Isaac's rules. Follow them in every step. Update the status and the re
 | --- | --- | --- |
 | 1 Webhook signatures | Meets | HMAC-SHA512 check, constant-time compare, before anything is read or recorded. Amount and currency must match the gift. Repeats recorded once. Tested, including with the check switched off. |
 | 2 No secrets in code or chat | Meets | Scan of the repo found none. `.env` files are ignored by git. Setup page never returns a value. Keep it this way. |
-| 3 Sign-in limits and 2FA | Partly | Admin tools now lock for 15 minutes after 5 wrong tokens from one source (20 from all sources), counted in the database, tested. Church sign-in does not exist yet (step 9). 2FA must be switched on for GitHub, Vercel, Supabase and Paystack accounts (Isaac's action). |
+| 3 Sign-in limits and 2FA | Partly | Admin tools now lock for 15 minutes after 5 wrong tokens from one source (20 from all sources), counted in the database, tested. Church sign-in does not exist yet (step 9). Isaac reports 2FA is now on for GitHub, Vercel, Supabase and Paystack and the Development copies of the settings are deleted (10 Oct 2026; reviewer to verify). |
 | 4 No card numbers or PINs | Meets | Mobile money PIN is entered on the giver's phone. Cards use Paystack's page. Maizz stores gift records and (later) names, phone numbers and emails, which are personal data for the Data Protection Commission. |
 | 5 Logging | Mostly meets | Gift changes are append-only rows in `gift_events`. Admin actions, failed admin tokens, refused webhooks, amount mismatches and giver edits/anonymising/church creation go to the append-only `audit_log` (no secrets, phone numbers or names). Needs `0002_audit.sql` run in Supabase. Not yet backed up (rule 8). |
 | 6 Alerts | Not built | No error alerts (Sentry), no large-gift alert, no reconciliation yet (step 6). |
@@ -65,5 +65,5 @@ App and platform
 - Backups, restore test and the incident plan.
 
 Later steps to add to this list as they are built
-- Fees maths (step 4, `src/lib/fees.ts`): 1.95% assumed, rounded up, gross-up so the church gets the gift; confirm rate, rounding and any levy with Paystack in writing; compare with the real fee Paystack reports per payment (step 6); payout fees (GH₵1 to mobile money, GH₵8 to bank) belong to step 7.
+- Fees maths (step 4, `src/lib/fees.ts`): 1.95% assumed, rounded up, gross-up so the church gets the gift; rate 1.95% and no extra levies confirmed by Isaac with Paystack (rounding still to confirm); compare with the real fee Paystack reports per payment (step 6); payout fees (GH₵1 to mobile money, GH₵8 to bank) belong to step 7.
 - The checkout page and receipts (step 5), reconciliation and refunds (step 6), church sub-accounts and payouts (step 7), the Church Manager link (step 8), the church dashboard and its sign-in (step 9).
