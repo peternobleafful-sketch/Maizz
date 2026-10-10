@@ -58,12 +58,12 @@ export default function SetupCheckClient() {
         headers: { ...auth, "Content-Type": "application/json" },
         body: JSON.stringify({ network, phone }),
       });
-      const data: { error?: string; reference?: string; result?: { kind: string; message?: string } } = await res.json();
+      const data: { error?: string; reference?: string; totalPesewas?: number; feePesewas?: number; result?: { kind: string; message?: string } } = await res.json();
       if (!res.ok || data.error) {
         setTestOutput(data.error ?? "Something went wrong.");
       } else {
         setReference(data.reference ?? "");
-        setTestOutput(`Started. Paystack says: ${data.result?.kind ?? "unknown"}${data.result?.message ? ` — ${data.result.message}` : ""}`);
+        setTestOutput(`Started. Gift GH₵1.00 plus fee ${data.feePesewas ?? "?"} pesewas = ${data.totalPesewas ?? "?"} pesewas charged. Paystack says: ${data.result?.kind ?? "unknown"}${data.result?.message ? ` — ${data.result.message}` : ""}`);
       }
     } catch {
       setTestOutput("Could not reach the site.");

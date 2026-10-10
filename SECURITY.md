@@ -65,4 +65,5 @@ App and platform
 - Backups, restore test and the incident plan.
 
 Later steps to add to this list as they are built
-- Fees maths (step 4), the checkout page and receipts (step 5), reconciliation and refunds (step 6), church sub-accounts and payouts (step 7), the Church Manager link (step 8), the church dashboard and its sign-in (step 9).
+- Fees maths (step 4, `src/lib/fees.ts`): 1.95% assumed, rounded up, gross-up so the church gets the gift; confirm rate, rounding and any levy with Paystack in writing; compare with the real fee Paystack reports per payment (step 6); payout fees (GH₵1 to mobile money, GH₵8 to bank) belong to step 7.
+- The checkout page and receipts (step 5), reconciliation and refunds (step 6), church sub-accounts and payouts (step 7), the Church Manager link (step 8), the church dashboard and its sign-in (step 9).

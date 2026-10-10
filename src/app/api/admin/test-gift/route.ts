@@ -1,5 +1,6 @@
 import { openAdminRoute } from "@/lib/adminAuth";
 import { classifyPaystackKey } from "@/lib/config";
+import { addFees } from "@/lib/fees";
 import { logError } from "@/lib/log";
 import { normaliseGhanaPhone } from "@/lib/phone";
 import { getLedger, getPaymentProvider } from "@/lib/payments";
@@ -39,12 +40,13 @@ export async function POST(req: Request) {
     const ledger = getLedger();
     const churchId = await ledger.getOrCreateChurch("maizz-test-church", "Maizz Test Church");
     const reference = newGiftReference("mz_test");
+    const fees = addFees(TEST_AMOUNT_PESEWAS);
     const gift = await ledger.createGift({
       reference,
       churchId,
       giftType: "other",
-      amountPesewas: TEST_AMOUNT_PESEWAS,
-      feePesewas: 0,
+      amountPesewas: fees.giftPesewas,
+      feePesewas: fees.feePesewas,
     });
 
     const result = await provider.initialize({
@@ -61,7 +63,7 @@ export async function POST(req: Request) {
     } else {
       await ledger.addEvent({ giftId: gift.id, status: "pending", detail: { source: "initialize" } });
     }
-    return Response.json({ reference, result });
+    return Response.json({ reference, result, giftPesewas: fees.giftPesewas, feePesewas: fees.feePesewas, totalPesewas: fees.totalPesewas });
   } catch (err) {
     const message = err instanceof ProviderError ? err.message : "Something went wrong. Check the Vercel logs.";
     logError("test_gift.failed", { reason: err instanceof Error ? err.message : "unknown" });
