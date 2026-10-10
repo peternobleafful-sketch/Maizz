@@ -216,3 +216,29 @@ describe("supabase audit log", () => {
     await expect(a.countSince("x", 5)).rejects.toThrow(AuditError);
   });
 });
+
+describe("daily check gate (CRON_SECRET)", () => {
+  const CRON = "a-different-long-secret-1234567";
+  const env = { SETUP_CHECK_TOKEN: TOKEN, CRON_SECRET: CRON };
+  const cronGate = (audit: FakeAudit, r: Request, e: Record<string, string | undefined> = env) =>
+    adminGate({ req: r, env: e, audit, action: "cron.reconcile", tokenEnv: "CRON_SECRET", failedAction: "cron.auth_failed" });
+
+  it("is switched off until CRON_SECRET is set", async () => {
+    expect((await cronGate(new FakeAudit(), req({ token: CRON }), { SETUP_CHECK_TOKEN: TOKEN }))!.status).toBe(404);
+  });
+
+  it("accepts only its own secret, not the admin token", async () => {
+    const audit = new FakeAudit();
+    expect((await cronGate(audit, req({ token: TOKEN })))!.status).toBe(401);
+    expect(await cronGate(audit, req({ token: CRON }))).toBeNull();
+    expect(audit.actions()).toEqual(["cron.auth_failed", "cron.reconcile"]);
+    expect(audit.entries[1]).toMatchObject({ actor: "cron" });
+  });
+
+  it("locks after repeated wrong secrets, counted apart from the admin tools", async () => {
+    const audit = new FakeAudit();
+    for (let i = 0; i < ADMIN_LIMITS.perSource; i++) await cronGate(audit, req({ token: "wrong" }));
+    expect((await cronGate(audit, req({ token: CRON })))!.status).toBe(429);
+    expect(await gate(audit, req({ token: TOKEN }))).toBeNull();
+  });
+});

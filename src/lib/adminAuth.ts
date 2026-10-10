@@ -12,7 +12,6 @@ export const ADMIN_LIMITS = {
 } as const;
 
 const MIN_TOKEN_LENGTH = 24;
-const FAILED = "admin.auth_failed";
 
 function digest(value: string): Buffer {
   return createHash("sha256").update(value).digest();
@@ -36,9 +35,14 @@ export async function adminGate(args: {
   audit: AuditLog;
   action: string;
   target?: string;
+  /** Which setting holds the secret. The daily check uses CRON_SECRET, everything else SETUP_CHECK_TOKEN. */
+  tokenEnv?: string;
+  /** What a wrong secret is logged as, and what the lock-out counts. */
+  failedAction?: string;
 }): Promise<Response | null> {
   const { req, env, audit, action, target } = args;
-  const token = env.SETUP_CHECK_TOKEN?.trim();
+  const FAILED = args.failedAction ?? "admin.auth_failed";
+  const token = env[args.tokenEnv ?? "SETUP_CHECK_TOKEN"]?.trim();
   if (!token || token.length < MIN_TOKEN_LENGTH) {
     return new Response("Not found", { status: 404 });
   }
@@ -70,7 +74,7 @@ export async function adminGate(args: {
       await audit.record({ actor: "unknown", action: FAILED, outcome: "denied", sourceKey, target: action });
       return Response.json({ error: "Not allowed" }, { status: 401 });
     }
-    await audit.record({ actor: "admin", action, outcome: "ok", sourceKey, target });
+    await audit.record({ actor: args.tokenEnv ? "cron" : "admin", action, outcome: "ok", sourceKey, target });
   } catch {
     logError("admin.audit_write_failed");
     return unavailable(wait);
@@ -79,12 +83,18 @@ export async function adminGate(args: {
 }
 
 /** For the routes: builds the audit log, then runs the gate. */
-export async function openAdminRoute(req: Request, env: Env, action: string, target?: string): Promise<Response | null> {
+export async function openAdminRoute(
+  req: Request,
+  env: Env,
+  action: string,
+  target?: string,
+  options: { tokenEnv?: string; failedAction?: string } = {},
+): Promise<Response | null> {
   let audit: AuditLog;
   try {
     audit = getAudit(env);
   } catch (err) {
     return unavailable(err instanceof Error ? err.message : "The Supabase settings are missing.");
   }
-  return adminGate({ req, env, audit, action, target });
+  return adminGate({ req, env, audit, action, target, ...options });
 }

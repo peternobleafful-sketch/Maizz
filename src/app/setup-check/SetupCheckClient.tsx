@@ -20,6 +20,7 @@ export default function SetupCheckClient() {
   const [phone, setPhone] = useState("");
   const [reference, setReference] = useState("");
   const [testOutput, setTestOutput] = useState("");
+  const [checkOutput, setCheckOutput] = useState("");
 
   const auth = { Authorization: `Bearer ${token.trim()}` };
 
@@ -96,6 +97,48 @@ export default function SetupCheckClient() {
     }
   }
 
+  async function refundGift() {
+    if (!window.confirm("Refund this test gift in full? (test mode, no real money)")) return;
+    setBusy(true);
+    setTestOutput("");
+    try {
+      const res = await fetch("/api/admin/refund", {
+        method: "POST",
+        headers: { ...auth, "Content-Type": "application/json" },
+        body: JSON.stringify({ reference }),
+      });
+      const data: { error?: string; message?: string; refund?: string; amountPesewas?: number } = await res.json();
+      if (!res.ok || data.error) setTestOutput(data.error ?? data.message ?? "Something went wrong.");
+      else setTestOutput(`Refund of ${data.amountPesewas} pesewas started (${data.refund}). Press Check result in a minute.`);
+    } catch {
+      setTestOutput("Could not reach the site.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runDailyCheck() {
+    setBusy(true);
+    setCheckOutput("");
+    try {
+      const res = await fetch("/api/admin/reconcile", { method: "POST", headers: auth });
+      const data: { error?: string; message?: string; summary?: Record<string, number | boolean> } = await res.json();
+      if (!res.ok || !data.summary) setCheckOutput(data.error ?? data.message ?? "Something went wrong.");
+      else {
+        const s = data.summary;
+        setCheckOutput(
+          `Waiting gifts checked: ${s.checkedPending} (paid ${s.settledPaid}, failed ${s.settledFailed}, closed ${s.abandoned}, still waiting ${s.stillPending}). ` +
+            `Paid gifts re-checked: ${s.paidChecked}. Problems: ${Number(s.mismatches) + Number(s.paidNotConfirmed) + Number(s.errors)}.` +
+            (s.incomplete ? " Not everything fitted in one run." : ""),
+        );
+      }
+    } catch {
+      setCheckOutput("Could not reach the site.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="tool">
       <h1>Maizz setup check</h1>
@@ -163,9 +206,25 @@ export default function SetupCheckClient() {
               <button className="tool-button" onClick={checkGift} disabled={busy}>
                 Check result
               </button>
+              <button className="tool-button" onClick={refundGift} disabled={busy}>
+                Refund this test gift
+              </button>
             </>
           )}
           {testOutput && <p className="tool-message">{testOutput}</p>}
+        </section>
+      )}
+
+      {checks && (
+        <section className="tool-section">
+          <h2>Daily check of the books</h2>
+          <p className="tool-note">
+            Asks Paystack about every waiting gift and re-checks recent paid gifts. It also runs by itself every night.
+          </p>
+          <button className="tool-button" onClick={runDailyCheck} disabled={busy}>
+            Run daily check now
+          </button>
+          {checkOutput && <p className="tool-message">{checkOutput}</p>}
         </section>
       )}
     </main>

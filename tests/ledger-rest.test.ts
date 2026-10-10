@@ -10,6 +10,7 @@ const GIFT_ROW = {
   amount_pesewas: 10_000,
   fee_pesewas: 150,
   total_pesewas: 10_150,
+  created_at: "2026-10-10T10:00:00+00:00",
 };
 
 function ledger(replies: Parameters<typeof mockFetch>[0], key = "sb_secret_abc") {
@@ -41,6 +42,7 @@ describe("supabase ledger", () => {
       amountPesewas: 10_000,
       feePesewas: 150,
       totalPesewas: 10_150,
+      createdAt: "2026-10-10T10:00:00+00:00",
     });
     expect(calls[0]!.url).toContain("/rest/v1/gifts?reference=eq.mz_ref_12345678");
   });
@@ -86,8 +88,8 @@ describe("supabase ledger", () => {
   });
 
   it("reads the current status", async () => {
-    const { l } = ledger([{ json: [{ status: "succeeded", was_paid: true }] }]);
-    expect(await l.currentStatus("mz_ref_12345678")).toEqual({ status: "succeeded", wasPaid: true });
+    const { l } = ledger([{ json: [{ status: "succeeded", was_paid: true, refunded_pesewas: 0 }] }]);
+    expect(await l.currentStatus("mz_ref_12345678")).toEqual({ status: "succeeded", wasPaid: true, refundedPesewas: 0 });
   });
 
   it("creates the test church once, and finds it afterwards", async () => {
@@ -125,5 +127,24 @@ describe("supabase ledger: churches and givers", () => {
     await l.createGift(base);
     expect((calls[0]!.body as Record<string, unknown>).giver_id).toBe("u1");
     expect((calls[1]!.body as Record<string, unknown>).giver_id).toBeNull();
+  });
+});
+
+describe("supabase ledger: lists for the daily check", () => {
+  it("lists unsettled gifts oldest first, with limits encoded", async () => {
+    const { l, calls } = ledger([{ json: [{ ...GIFT_ROW, id: "g1" }] }]);
+    const gifts = await l.listUnsettled({ olderThanMinutes: 10, newerThanDays: 3, limit: 50 });
+    expect(gifts).toHaveLength(1);
+    const url = calls[0]!.url;
+    expect(url).toContain("gift_status?status=eq.pending");
+    expect(url).toContain("order=created_at.asc");
+    expect(url).toContain("limit=50");
+    expect(url).toMatch(/created_at=lt\.\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("lists recent paid gifts", async () => {
+    const { l, calls } = ledger([{ json: [{ ...GIFT_ROW, id: "g1" }] }]);
+    await l.listRecentPaid({ sinceDays: 3, limit: 20 });
+    expect(calls[0]!.url).toContain("was_paid=eq.true");
   });
 });

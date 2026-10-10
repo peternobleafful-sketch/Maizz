@@ -11,12 +11,18 @@ const migration = readFileSync(
   "utf8",
 );
 
+const statusRules = readFileSync(
+  fileURLToPath(new URL("../supabase/migrations/0004_status_rules.sql", import.meta.url)),
+  "utf8",
+);
+
 let db: PGlite;
 let counter = 0;
 
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(migration);
+  await db.exec(statusRules);
 }, 60_000);
 
 afterAll(async () => {
@@ -305,5 +311,59 @@ describe("status and totals", () => {
     const byChurch = Object.fromEntries(res.rows.map((r) => [r.church_id, Number(r.received_pesewas)]));
     expect(byChurch[a]).toBe(3_000);
     expect(byChurch[b]).toBe(9_000);
+  });
+});
+
+describe("late and out-of-order notices (0004)", () => {
+  const statusOf = async (gift: string) =>
+    (await db.query<{ status: string; was_paid: boolean }>("select status, was_paid from gift_status where gift_id = $1", [gift])).rows[0];
+
+  it("keeps a paid gift paid when a pending notice arrives after it", async () => {
+    const gift = await newGift(await newChurch());
+    await addEvent(gift, "succeeded");
+    await addEvent(gift, "pending");
+    expect(await statusOf(gift)).toEqual({ status: "succeeded", was_paid: true });
+  });
+
+  it("keeps a paid gift paid after a late failed or abandoned notice", async () => {
+    const gift = await newGift(await newChurch());
+    await addEvent(gift, "succeeded");
+    await addEvent(gift, "failed");
+    await addEvent(gift, "abandoned");
+    expect(await statusOf(gift)).toEqual({ status: "succeeded", was_paid: true });
+  });
+
+  it("lets an unpaid gift follow its latest notice", async () => {
+    const gift = await newGift(await newChurch());
+    await addEvent(gift, "pending");
+    await addEvent(gift, "abandoned");
+    expect(await statusOf(gift)).toEqual({ status: "abandoned", was_paid: false });
+    await addEvent(gift, "succeeded");
+    expect(await statusOf(gift)).toEqual({ status: "succeeded", was_paid: true });
+  });
+
+  it("shows a refund even if other notices come after it", async () => {
+    const gift = await newGift(await newChurch(), { amount: 10_000, fee: 199 });
+    await addEvent(gift, "succeeded");
+    await addEvent(gift, "refunded", 500);
+    await addEvent(gift, "pending");
+    expect((await statusOf(gift))!.status).toBe("refunded");
+  });
+
+  it("takes a full refund (gift plus fee) out of the church total as exactly the gift", async () => {
+    const church = await newChurch();
+    const gift = await newGift(church, { amount: 10_000, fee: 199 });
+    await addEvent(gift, "succeeded");
+    await addEvent(gift, "refunded", 10_199);
+    const res = await db.query<{ received_pesewas: string }>("select received_pesewas from church_totals where church_id = $1", [church]);
+    expect(Number(res.rows[0]!.received_pesewas)).toBe(0);
+  });
+
+  it("does not count an unpaid gift's refund as money", async () => {
+    const church = await newChurch();
+    const gift = await newGift(church, { amount: 10_000 });
+    await addEvent(gift, "failed");
+    const res = await db.query<{ received_pesewas: string }>("select received_pesewas from church_totals where church_id = $1", [church]);
+    expect(Number(res.rows[0]!.received_pesewas)).toBe(0);
   });
 });

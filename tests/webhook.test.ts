@@ -45,7 +45,7 @@ describe("genuine payment notice", () => {
     expect(res.body.result).toBe("added");
     expect(ledger.events).toHaveLength(1);
     expect(ledger.events[0]).toMatchObject({ giftId, status: "succeeded", providerEventId: "paystack:charge.success:1001" });
-    expect(await ledger.currentStatus(REF)).toEqual({ status: "succeeded", wasPaid: true });
+    expect(await ledger.currentStatus(REF)).toEqual({ status: "succeeded", wasPaid: true, refundedPesewas: 0 });
   });
 
   it("records a repeated notice only once", async () => {
@@ -99,7 +99,7 @@ describe("notices we must not trust", () => {
     expect(res.status).toBe(200);
     expect(res.body.result).toBe("amount_mismatch_not_recorded");
     expect(ledger.events).toHaveLength(0);
-    expect(await ledger.currentStatus(REF)).toEqual({ status: "pending", wasPaid: false });
+    expect(await ledger.currentStatus(REF)).toEqual({ status: "pending", wasPaid: false, refundedPesewas: 0 });
   });
 
   it("does not mark a gift paid when the amount excludes the fee", async () => {
@@ -153,6 +153,34 @@ describe("other events", () => {
     });
     expect(res.body.result).toBe("refund_amount_invalid_not_recorded");
     expect(ledger.events).toHaveLength(0);
+  });
+});
+
+describe("refund limits", () => {
+  const refund = (id: number, amount: number) =>
+    send({ event: "refund.processed", data: { id, transaction_reference: REF, amount, currency: "GHS" } });
+
+  it("refuses a refund on a gift that was never paid", async () => {
+    const res = await refund(70, 100);
+    expect(res.body.result).toBe("refund_amount_invalid_not_recorded");
+    expect(ledger.events).toHaveLength(0);
+    expect(audit.actions()).toContain("webhook.refund_invalid");
+  });
+
+  it("allows several part refunds up to the total paid, and no more", async () => {
+    await send(success());
+    expect((await refund(71, 6_000)).body.result).toBe("added");
+    expect((await refund(72, 4_150)).body.result).toBe("added");
+    const over = await refund(73, 1);
+    expect(over.body.result).toBe("refund_amount_invalid_not_recorded");
+    expect(ledger.events.filter((e) => e.status === "refunded")).toHaveLength(2);
+  });
+
+  it("records the same refund notice once", async () => {
+    await send(success());
+    await refund(80, 1_000);
+    expect((await refund(80, 1_000)).body.result).toBe("duplicate");
+    expect(ledger.events.filter((e) => e.status === "refunded")).toHaveLength(1);
   });
 });
 

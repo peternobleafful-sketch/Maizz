@@ -9,7 +9,7 @@ const GOOD_ENV = {
 };
 
 const ok = { status: 200, json: [] };
-const all200 = [ok, ...Array.from({ length: 7 }, () => ok), { status: 401, json: {} }];
+const all200 = [ok, ...Array.from({ length: 7 }, () => ok), { status: 401, json: {} }, { json: [{ id: 1 }] }];
 
 function byId(results: Awaited<ReturnType<typeof runSetupChecks>>) {
   return Object.fromEntries(results.map((r) => [r.id, r]));
@@ -19,7 +19,7 @@ describe("setup check", () => {
   it("passes everything when settings are right", async () => {
     const m = mockFetch(all200);
     const r = byId(await runSetupChecks(GOOD_ENV, m.fn));
-    for (const id of ["paystack_key", "paystack_reach", "supabase_url", "supabase_key", "ledger", "locked", "guard"]) {
+    for (const id of ["paystack_key", "paystack_reach", "supabase_url", "supabase_key", "ledger", "locked", "reconcile", "guard"]) {
       expect(r[id]!.ok, `${id}: ${r[id]!.hint}`).toBe(true);
     }
   });
@@ -88,5 +88,22 @@ describe("setup check", () => {
     };
     const text = JSON.stringify(await runSetupChecks(env, mockFetch(all200).fn));
     expect(text).not.toContain("SUPERSECRET");
+  });
+});
+
+describe("setup check: daily check", () => {
+  it("says when the daily check has not run yet", async () => {
+    const replies = [...all200.slice(0, -1), { json: [] }];
+    const r = byId(await runSetupChecks(GOOD_ENV, mockFetch(replies).fn));
+    expect(r.reconcile!.ok).toBe(false);
+    expect(r.reconcile!.hint).toMatch(/CRON_SECRET/);
+  });
+
+  it("asks the audit log only for recent runs of the daily check", async () => {
+    const m = mockFetch(all200);
+    await runSetupChecks(GOOD_ENV, m.fn);
+    const url = m.calls[m.calls.length - 1]!.url;
+    expect(url).toContain("audit_log?action=eq.reconcile.run");
+    expect(url).toMatch(/at=gte\.\d{4}-/);
   });
 });

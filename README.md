@@ -63,3 +63,10 @@ Givers cover Paystack's 1.95%, so the church receives the exact gift (`src/lib/f
 ## The giving page (step 5, test mode only)
 
 `/give/maizz-test-church` is the giver's page: amount (quick buttons or any amount), gift type, mobile money network and number, name or anonymous. It shows "Gift + fees = total" and says only "Maizz". The giver is told thank you only when the ledger says the gift succeeded. Only the test church can receive gifts until church sign-up (step 7). Run `supabase/migrations/0003_gift_types.sql` once in Supabase. Card and bank transfer come later.
+
+## Safety (step 6)
+
+- A late or out-of-order notice never un-pays a gift (`0004_status_rules.sql`). The same payment is recorded once, whether the notice or our own check arrives first.
+- While a giver waits, the page asks the payment provider directly, so failures show up in seconds. Gifts the provider never confirms close as abandoned after 2 hours; a later payment still counts.
+- Refunds are recorded from the provider's refund notice and can never exceed what was paid. `/setup-check` has a test-mode refund button.
+- The nightly check (`/api/cron/reconcile`, 03:00, needs `CRON_SECRET` in Vercel) settles waiting gifts, re-checks gifts paid in the last 3 days against the provider, and writes problems to the audit log. `/setup-check` shows FIX if it has not run in 26 hours.

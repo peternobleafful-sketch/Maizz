@@ -43,6 +43,8 @@ export class FakeLedger implements Ledger {
   gifts: GiftRecord[] = [];
   events: (NewEvent & { id: number })[] = [];
   failNext = false;
+  /** Overridable clock so tests can age gifts. */
+  now: () => number = () => Date.now();
 
   async getOrCreateChurch(slug: string): Promise<string> {
     return `church-${slug}`;
@@ -70,6 +72,7 @@ export class FakeLedger implements Ledger {
       amountPesewas: g.amountPesewas,
       feePesewas: g.feePesewas,
       totalPesewas: g.amountPesewas + g.feePesewas,
+      createdAt: new Date(this.now()).toISOString(),
     };
     this.giftGivers.set(g.reference, g.giverId);
     this.gifts.push(gift);
@@ -90,12 +93,39 @@ export class FakeLedger implements Ledger {
     return "added";
   }
 
-  async currentStatus(reference: string): Promise<{ status: EventStatus; wasPaid: boolean } | null> {
+  async currentStatus(
+    reference: string,
+  ): Promise<{ status: EventStatus; wasPaid: boolean; refundedPesewas: number } | null> {
     const gift = this.gifts.find((g) => g.reference === reference);
     if (!gift) return null;
     const mine = this.events.filter((e) => e.giftId === gift.id);
     const last = mine[mine.length - 1];
-    return { status: last?.status ?? "pending", wasPaid: mine.some((e) => e.status === "succeeded") };
+    const wasPaid = mine.some((e) => e.status === "succeeded");
+    const refundedPesewas = mine.filter((e) => e.status === "refunded").reduce((n, e) => n + (e.amountPesewas ?? 0), 0);
+    // Same rules as the database view (0004): once paid, later notices never un-pay a gift.
+    const status: EventStatus = wasPaid ? (refundedPesewas > 0 ? "refunded" : "succeeded") : (last?.status ?? "pending");
+    return { status, wasPaid, refundedPesewas };
+  }
+
+  async listUnsettled(o: { olderThanMinutes: number; newerThanDays: number; limit: number }): Promise<GiftRecord[]> {
+    const out: GiftRecord[] = [];
+    for (const g of this.gifts) {
+      const age = this.now() - Date.parse(g.createdAt);
+      if (age < o.olderThanMinutes * 60_000 || age > o.newerThanDays * 86_400_000) continue;
+      const s = await this.currentStatus(g.reference);
+      if (s && s.status === "pending") out.push(g);
+    }
+    return out.slice(0, o.limit);
+  }
+
+  async listRecentPaid(o: { sinceDays: number; limit: number }): Promise<GiftRecord[]> {
+    const out: GiftRecord[] = [];
+    for (const g of this.gifts) {
+      if (this.now() - Date.parse(g.createdAt) > o.sinceDays * 86_400_000) continue;
+      const s = await this.currentStatus(g.reference);
+      if (s?.wasPaid) out.push(g);
+    }
+    return out.slice(0, o.limit);
   }
 }
 

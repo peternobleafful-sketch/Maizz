@@ -15,6 +15,8 @@ export interface GiftRecord {
   amountPesewas: number;
   feePesewas: number;
   totalPesewas: number;
+  /** When the gift was started (ISO text). */
+  createdAt: string;
 }
 
 export interface NewGift {
@@ -49,7 +51,13 @@ export interface Ledger {
   findGiftByReference(reference: string): Promise<GiftRecord | null>;
   /** "duplicate" means this provider event was already recorded, which is fine. */
   addEvent(event: NewEvent): Promise<"added" | "duplicate">;
-  currentStatus(reference: string): Promise<{ status: EventStatus; wasPaid: boolean } | null>;
+  currentStatus(
+    reference: string,
+  ): Promise<{ status: EventStatus; wasPaid: boolean; refundedPesewas: number } | null>;
+  /** Gifts still waiting for an answer (never paid), started between the two limits. Oldest first. */
+  listUnsettled(opts: { olderThanMinutes: number; newerThanDays: number; limit: number }): Promise<GiftRecord[]>;
+  /** Gifts marked paid in the last few days, newest first. Used to double-check the books. */
+  listRecentPaid(opts: { sinceDays: number; limit: number }): Promise<GiftRecord[]>;
 }
 
 export class LedgerError extends Error {}
@@ -77,6 +85,7 @@ function toGift(row: unknown): GiftRecord {
     amountPesewas: pesewas(row.amount_pesewas, "amount"),
     feePesewas: pesewas(row.fee_pesewas, "fee"),
     totalPesewas: pesewas(row.total_pesewas, "total"),
+    createdAt: typeof row.created_at === "string" ? row.created_at : "",
   };
 }
 
@@ -180,7 +189,7 @@ export function createSupabaseLedger(opts: {
     async findGiftByReference(reference) {
       const res = await request(
         "GET",
-        `gifts?reference=eq.${encodeURIComponent(reference)}&select=id,reference,church_id,amount_pesewas,fee_pesewas,total_pesewas&limit=1`,
+        `gifts?reference=eq.${encodeURIComponent(reference)}&select=id,reference,church_id,amount_pesewas,fee_pesewas,total_pesewas,created_at&limit=1`,
       );
       const row = (await rows(res, "gift lookup"))[0];
       return row === undefined ? null : toGift(row);
@@ -208,11 +217,34 @@ export function createSupabaseLedger(opts: {
     async currentStatus(reference) {
       const res = await request(
         "GET",
-        `gift_status?reference=eq.${encodeURIComponent(reference)}&select=status,was_paid&limit=1`,
+        `gift_status?reference=eq.${encodeURIComponent(reference)}&select=status,was_paid,refunded_pesewas&limit=1`,
       );
       const row = (await rows(res, "status lookup"))[0];
       if (!isRec(row) || typeof row.status !== "string") return null;
-      return { status: row.status as EventStatus, wasPaid: row.was_paid === true };
+      return {
+        status: row.status as EventStatus,
+        wasPaid: row.was_paid === true,
+        refundedPesewas: pesewas(row.refunded_pesewas ?? 0, "refunded"),
+      };
+    },
+
+    async listUnsettled({ olderThanMinutes, newerThanDays, limit }) {
+      const older = new Date(Date.now() - olderThanMinutes * 60_000).toISOString();
+      const newer = new Date(Date.now() - newerThanDays * 86_400_000).toISOString();
+      const res = await request(
+        "GET",
+        `gift_status?status=eq.pending&created_at=lt.${encodeURIComponent(older)}&created_at=gt.${encodeURIComponent(newer)}&select=id:gift_id,reference,church_id,amount_pesewas,fee_pesewas,total_pesewas,created_at&order=created_at.asc&limit=${Math.max(1, Math.floor(limit))}`,
+      );
+      return (await rows(res, "unsettled gifts")).map(toGift);
+    },
+
+    async listRecentPaid({ sinceDays, limit }) {
+      const since = new Date(Date.now() - sinceDays * 86_400_000).toISOString();
+      const res = await request(
+        "GET",
+        `gift_status?was_paid=eq.true&created_at=gt.${encodeURIComponent(since)}&select=id:gift_id,reference,church_id,amount_pesewas,fee_pesewas,total_pesewas,created_at&order=created_at.desc&limit=${Math.max(1, Math.floor(limit))}`,
+      );
+      return (await rows(res, "recent paid gifts")).map(toGift);
     },
   };
 }

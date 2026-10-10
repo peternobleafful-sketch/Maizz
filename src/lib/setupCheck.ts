@@ -144,9 +144,34 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
         ? "A request with no key was refused. Good."
         : "A request with no key was not refused. Tell Claude straight away.",
     );
+
+    // The daily check leaves a note in the audit log every time it runs.
+    const since = new Date(Date.now() - 26 * 3_600_000).toISOString();
+    let ran: boolean | null = null;
+    try {
+      const res = await fetchFn(
+        `${rawUrl}/rest/v1/audit_log?action=eq.reconcile.run&at=gte.${encodeURIComponent(since)}&select=id&limit=1`,
+        { headers, signal: AbortSignal.timeout(10_000) },
+      );
+      const rowsFound: unknown = res.ok ? await res.json() : null;
+      ran = Array.isArray(rowsFound) ? rowsFound.length > 0 : null;
+    } catch {
+      ran = null;
+    }
+    add(
+      "reconcile",
+      "Daily check of the books has run in the last 26 hours",
+      ran === true,
+      ran === true
+        ? "The daily check ran recently."
+        : ran === false
+          ? "It has not run yet. It runs by itself at 03:00 once CRON_SECRET is set in Vercel. You can also press Run daily check now below."
+          : "Could not read the audit log just now. Try again in a minute.",
+    );
   } else {
     add("ledger", "Ledger and audit log are installed and reachable", false, "Fix the Supabase settings above first.");
     add("locked", "Ledger refuses requests with no key", false, "Fix the Supabase settings above first.");
+    add("reconcile", "Daily check of the books has run in the last 26 hours", false, "Fix the Supabase settings above first.");
   }
 
   // 7. Test mode guard

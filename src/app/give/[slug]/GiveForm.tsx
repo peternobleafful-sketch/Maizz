@@ -62,7 +62,7 @@ export default function GiveForm(props: {
         // keep trying
       }
       if (Date.now() - started > 120_000) setSlow(true);
-    }, 3000);
+    }, 4000);
     return () => {
       stop.current = true;
       clearInterval(timer);

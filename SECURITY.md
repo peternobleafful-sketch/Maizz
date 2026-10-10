@@ -23,7 +23,7 @@ These are Isaac's rules. Follow them in every step. Update the status and the re
 | 3 Sign-in limits and 2FA | Partly | Admin tools now lock for 15 minutes after 5 wrong tokens from one source (20 from all sources), counted in the database, tested. Church sign-in does not exist yet (step 9). Isaac reports 2FA is now on for GitHub, Vercel, Supabase and Paystack and the Development copies of the settings are deleted (10 Oct 2026; reviewer to verify). |
 | 4 No card numbers or PINs | Meets | Mobile money PIN is entered on the giver's phone. Cards use Paystack's page. Maizz stores gift records and (later) names, phone numbers and emails, which are personal data for the Data Protection Commission. |
 | 5 Logging | Mostly meets | Gift changes are append-only rows in `gift_events`. Admin actions, failed admin tokens, refused webhooks, amount mismatches and giver edits/anonymising/church creation go to the append-only `audit_log` (no secrets, phone numbers or names). Needs `0002_audit.sql` run in Supabase. Not yet backed up (rule 8). |
-| 6 Alerts | Not built | No error alerts (Sentry), no large-gift alert, no reconciliation yet (step 6). |
+| 6 Alerts | Partly | The nightly check (step 6) writes every problem to the audit log (`reconcile.*`, `webhook.*`, `cron.auth_failed`) and a missed night shows as FIX on the setup page. But nothing pushes an email or message yet, and there is no large-gift alert or Sentry. Someone must look at the setup page until alerts are built. |
 | 7 Least access | Partly | One all-powerful Supabase key serves the public webhook and the admin tools. Update and delete are already removed from the ledger tables for that key. Admin tools refuse anything but a test key. They also stop working if the audit log is unreachable (fail closed). |
 | 8 Backups and incident plan | Gap | Supabase Free has no automatic backups and pauses after a week of no use. No written incident plan yet. |
 | 9 Independent review | Pending | Reviewer list below. Do not use a live key or take real money before it is done. |
@@ -32,7 +32,7 @@ These are Isaac's rules. Follow them in every step. Update the status and the re
 
 - ~~**Audit trail (rule 5):**~~ DONE: an append-only `audit_log` table in the database for admin actions, rejected webhooks and giver anonymisation, with no secrets or phone numbers in it. Add a trigger so giver edits are recorded.
 - ~~**Attempt limits (rule 3):**~~ DONE for admin tools: count failed access-token attempts in the database and lock the setup tools for a while after repeated failures. Use Supabase Auth two-step sign-in for church users in step 9.
-- **Alerts (rule 6):** Sentry for errors; alert rows and an email for failed signatures, amount mismatches, large gifts; daily reconciliation in step 6.
+- **Alerts (rule 6):** DONE in part: nightly reconciliation writes alert rows. STILL TO DO: Sentry for errors, and an email or message for failed signatures, amount mismatches, unconfirmed paid gifts, large gifts.
 - **Least access (rule 7):** a narrower database role (or database functions) for the webhook, so it can only read gifts and add events. Remove the Supabase and Paystack keys from the Vercel Development environment, since only Production needs them. Move the admin tools out of the public app before live.
 - **Backups and plan (rule 8):** move the database to Supabase Pro before any real data (daily backups kept 7 days), run a test restore, and write `docs/INCIDENT_RESPONSE.md` (who to call, how to pause payments, how to rotate keys, what to tell churches and the Data Protection Commission).
 - **Change control:** protect the `main` branch (changes by pull request, tests must pass) and add automatic tests on every push, before the pilot. Today every push goes straight to the live site.
@@ -43,6 +43,9 @@ These are Isaac's rules. Follow them in every step. Update the status and the re
 Webhook and payments
 - `src/lib/payments/paystack.ts`: signature check, status mapping, and the refund notice fields (not yet confirmed against a real test run).
 - `src/lib/payments/webhookHandler.ts`: out-of-order and late notices, refunds larger than paid, failed-payment detection (currently only through verify), what happens on an amount mismatch (logged, not recorded; needs a review queue).
+- `supabase/migrations/0004_status_rules.sql`: once paid, a gift stays paid; refunds reduce a church by at most the gift amount. `src/lib/reconcile.ts`: settle and nightly check, abandon after 2 hours, 40-second time budget and 100-gift batches (large volumes need a better job runner), notice and check share one event id so a payment is recorded once.
+- Refunds: `/api/admin/refund` (test mode only) and the notice-driven recording; cumulative refunds cannot exceed what was paid; a full refund returns the fee too (business decision to confirm); who is allowed to refund in the live app (step 9).
+- `/api/cron/reconcile`: separate CRON_SECRET, locks on wrong secrets, fail closed if the audit log is down. `/api/checkout/status` now asks the provider directly for waiting gifts (one provider call per poll per waiting giver).
 - Replay of an old genuine notice (safe today because of the unique provider event id; confirm).
 - Whether Paystack's source addresses should also be checked as a second layer.
 

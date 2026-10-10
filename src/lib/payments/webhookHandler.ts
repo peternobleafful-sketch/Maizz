@@ -142,6 +142,23 @@ export async function processWebhook(args: {
       });
       return { status: 200, body: { ok: true, result: "refund_amount_invalid_not_recorded" } };
     }
+    const now = await ledger.currentStatus(gift.reference);
+    if (!now?.wasPaid || now.refundedPesewas + refunded > gift.totalPesewas) {
+      logError("webhook.refund_not_allowed", { giftId: gift.id, refunded, alreadyRefunded: now?.refundedPesewas ?? 0 });
+      await note({
+        action: "webhook.refund_invalid",
+        outcome: "denied",
+        target: gift.reference,
+        detail: {
+          provider: provider.name,
+          refunded_pesewas: refunded,
+          already_refunded_pesewas: now?.refundedPesewas ?? 0,
+          total_pesewas: gift.totalPesewas,
+          was_paid: now?.wasPaid ?? false,
+        },
+      });
+      return { status: 200, body: { ok: true, result: "refund_amount_invalid_not_recorded" } };
+    }
     const outcome = await ledger.addEvent({
       giftId: gift.id,
       status: "refunded",
