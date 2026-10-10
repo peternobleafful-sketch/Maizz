@@ -39,29 +39,183 @@ body {
   outline-offset: 2px;
 }
 
-/* Coming-soon home page */
-.hold {
-  min-height: 100vh;
+/* Home page */
+.site-wrap {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.site-hero {
+  background: var(--hero);
+  color: var(--paper);
+  padding: 24px 0 72px;
+}
+
+.site-hero .site-wrap {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
   gap: 20px;
-  padding: 0 24px;
-  text-align: center;
-  background: var(--hero);
+}
+
+.site-hero h1 {
+  margin: 0;
+  max-width: 820px;
+  font-size: clamp(2.6rem, 8vw, 4.5rem);
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.site-logo {
+  height: 30px;
+  width: auto;
+  align-self: flex-start;
+  margin-bottom: clamp(32px, 8vw, 80px);
+}
+
+.site-logo.small {
+  height: 24px;
+  margin: 0;
+}
+
+.site-eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  color: #dde2ff;
+}
+
+.site-lede {
+  margin: 0;
+  max-width: 560px;
+  font-size: 1.25rem;
+  line-height: 1.5;
+}
+
+.site h2 {
+  margin: 0;
+  font-size: clamp(1.8rem, 5vw, 2.25rem);
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.site h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.site p {
+  line-height: 1.55;
+}
+
+.site-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 32px;
+  padding-top: clamp(56px, 8vw, 96px);
+  padding-bottom: clamp(56px, 8vw, 96px);
+}
+
+.site-split.centre {
+  align-items: center;
+}
+
+.site-split p {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.site-band {
+  background: var(--mist);
+  padding: clamp(56px, 8vw, 96px) 0;
+}
+
+.site-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.site-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.site-card {
+  background: var(--paper);
+  border-radius: 24px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.site-card p {
+  margin: 0;
+  color: var(--mute);
+}
+
+.site-num {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--blue);
+  color: var(--paper);
+  font-weight: 600;
+  font-size: 1.2rem;
+  display: grid;
+  place-items: center;
+}
+
+.site-example {
+  padding: 28px;
+  border-radius: 24px;
+  color: var(--paper);
+  background: radial-gradient(circle at 95% 0%, var(--blue-glow) 0%, rgba(124, 140, 255, 0) 55%), var(--blue);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-family: var(--font-mono);
+}
+
+.site-example .give-row span:first-child {
+  color: var(--paper);
+  font-family: var(--font-sans);
+}
+
+.site-example .give-row span:first-child::after {
+  border-bottom-color: var(--blue-glow);
+}
+
+.site-example .give-row.big span:first-child {
   color: var(--paper);
 }
 
-.hold-logo {
-  width: min(280px, 70vw);
-  height: auto;
+.site-example .site-receives {
+  margin: 4px 0 0;
+  font-family: var(--font-sans);
+  font-size: 1.1rem;
+  font-weight: 500;
 }
 
-.hold p {
-  margin: 0;
-  font-size: 1.1rem;
-  opacity: 0.9;
+.site-foot {
+  background: var(--blue);
+  color: #d6daf7;
+  padding: 32px 0;
+}
+
+.foot-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 /* Owner tools (setup check, churches) */
@@ -321,12 +475,12 @@ body {
 }
 
 .give-pill {
-  min-height: 44px;
+  min-height: 48px;
   min-width: 64px;
-  padding: 8px 18px;
-  background: transparent;
+  padding: 8px 20px;
+  background: rgba(255, 255, 255, 0.18);
   color: var(--paper);
-  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  border: 0;
   border-radius: 999px;
   font-family: var(--font-sans);
   font-size: 1rem;
@@ -344,7 +498,7 @@ body {
 .give-sheet {
   flex: 1;
   background: var(--paper);
-  border-radius: 28px 28px 0 0;
+  border-radius: 32px 32px 0 0;
   padding: 26px 20px 36px;
   display: flex;
   flex-direction: column;
@@ -380,11 +534,11 @@ body {
 }
 
 .give-chip {
-  min-height: 44px;
-  padding: 8px 16px;
-  background: var(--paper);
-  color: var(--ink);
-  border: 1.5px solid var(--line);
+  min-height: 48px;
+  padding: 8px 18px;
+  background: var(--mist);
+  color: var(--blue);
+  border: 1.5px solid transparent;
   border-radius: 999px;
   font-family: var(--font-sans);
   font-size: 1rem;
@@ -394,6 +548,81 @@ body {
 
 .give-chip:hover {
   border-color: var(--blue);
+}
+
+.give-note {
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--mist);
+  border-radius: 16px;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.give-hint {
+  color: var(--mute);
+  font-size: 0.92rem;
+}
+
+.give-thanks {
+  margin: 20px 0 0;
+  font-size: clamp(2.4rem, 11vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.give-lede {
+  margin: 8px 0 0;
+  font-size: 1.1rem;
+  line-height: 1.45;
+  opacity: 0.95;
+}
+
+.give-state.wide {
+  align-items: stretch;
+}
+
+.give-refbox {
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--mist);
+  border-radius: 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.give-refbox span:first-child {
+  color: var(--mute);
+  font-size: 0.95rem;
+}
+
+.give-refbox span:last-child {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  word-break: break-all;
+  text-align: right;
+}
+
+.give-steps-title {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.give-steps {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  line-height: 1.45;
+}
+
+.give-steps li::marker {
+  color: var(--blue);
+  font-weight: 600;
 }
 
 .give-chip.on {
@@ -437,7 +666,7 @@ body {
   margin: 0;
   padding: 16px;
   background: var(--mist);
-  border-radius: 18px;
+  border-radius: 20px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -587,8 +816,9 @@ body {
 
 /* Paid: the one moment of delight. The tick draws itself. */
 .give-tick {
-  width: 72px;
-  height: 72px;
+  width: 104px;
+  height: 104px;
+  margin-top: 28px;
   border-radius: 50%;
   background: var(--lime);
   display: grid;
@@ -597,12 +827,12 @@ body {
 
 .give-tick path {
   stroke: var(--ink);
-  stroke-width: 4;
+  stroke-width: 6;
   stroke-linecap: round;
   stroke-linejoin: round;
   fill: none;
-  stroke-dasharray: 40;
-  stroke-dashoffset: 40;
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
   animation: give-draw 0.5s 0.15s ease-out forwards;
 }
 
@@ -651,4 +881,37 @@ body {
   .give-sheet {
     border-radius: 28px;
   }
+}
+
+.find-box {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 0 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  font-family: var(--font-mono);
+}
+
+.find-box:focus-within {
+  border-color: var(--blue);
+  outline: 3px solid rgba(1, 27, 255, 0.16);
+}
+
+.find-box span {
+  color: var(--mute);
+}
+
+.find-box input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--ink);
+}
+
+.give-hint.centre {
+  text-align: center;
 }

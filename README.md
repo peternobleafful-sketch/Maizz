@@ -81,3 +81,5 @@ Givers cover Paystack's 1.95% and Maizz's own 1%, so the church receives the exa
 ## Look and feel
 
 Blue (#011BFF), white and ink, in the spirit of atom.money. The giving page is a blue field with the amount at the top and one white sheet below. Logo files are in `public/brand`. Fonts Outfit and DM Mono. The design rule is in `CLAUDE.md`.
+
+The design brief is `docs/design.md`. The Claude Design mock-ups (giving page, home, church dashboard, sign-up, receipts, Church Manager "My giving", owner tools) were exported on 10 Oct 2026. The giving page, home page and "page not found" page are built to them. The dashboard, sign-up and "My giving" screens wait for steps 8 and 9, because they need church sign-in with 2FA first. Receipt emails are not built yet, so no page promises one.

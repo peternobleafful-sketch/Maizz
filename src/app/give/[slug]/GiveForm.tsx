@@ -154,7 +154,15 @@ export default function GiveForm(props: {
             <img className="give-logo" src="/brand/maizz-logo-white.png" alt="Maizz" width={1101} height={296} />
             {props.testMode && <p className="give-test">Test mode: no real money moves</p>}
           </div>
-          <p className="give-church">Give to {props.churchName}</p>
+          {phase === "paid" ? (
+            <div className="give-tick" aria-hidden="true">
+              <svg width="56" height="56" viewBox="0 0 56 56">
+                <path d="M14 29L24 39L42 17" />
+              </svg>
+            </div>
+          ) : (
+            <p className="give-church">Give to {props.churchName}</p>
+          )}
 
           {showAmount ? (
             <>
@@ -182,6 +190,11 @@ export default function GiveForm(props: {
                 ))}
               </div>
             </>
+          ) : phase === "paid" ? (
+            <>
+              <h1 className="give-thanks">Thank you</h1>
+              <p className="give-lede">{props.churchName} has received your gift. God bless you.</p>
+            </>
           ) : (
             <p className="give-total">{heroTotal}</p>
           )}
@@ -197,7 +210,7 @@ export default function GiveForm(props: {
               }}
             >
               <fieldset className="give-group">
-                <legend className="give-label">What are you giving?</legend>
+                <legend className="give-label">Gift type</legend>
                 <div className="give-chips">
                   {props.types.map((t) => (
                     <button
@@ -213,7 +226,7 @@ export default function GiveForm(props: {
               </fieldset>
 
               <fieldset className="give-group">
-                <legend className="give-label">Pay with mobile money</legend>
+                <legend className="give-label">Mobile money network</legend>
                 <div className="give-chips">
                   {NETWORKS.map((n) => (
                     <button
@@ -235,7 +248,7 @@ export default function GiveForm(props: {
                   className="give-input"
                   inputMode="tel"
                   autoComplete="tel"
-                  placeholder="0551234987"
+                  placeholder="024 412 3456"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                 />
@@ -245,6 +258,12 @@ export default function GiveForm(props: {
                 <input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} />
                 <span>Give anonymously. We will not keep your name.</span>
               </label>
+
+              {anonymous && (
+                <p className="give-note">
+                  {props.churchName} will see this gift as Anonymous. Your number is never shown to the church.
+                </p>
+              )}
 
               {!anonymous && (
                 <div className="give-group">
@@ -256,6 +275,7 @@ export default function GiveForm(props: {
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                   />
+                  <small className="give-hint">So the church can thank you.</small>
                 </div>
               )}
 
@@ -297,9 +317,9 @@ export default function GiveForm(props: {
                 </svg>
               </div>
               <h2>Check your phone</h2>
-              <p>Approve the {heroTotal} request with your mobile money PIN. This page updates by itself.</p>
+              <p>We sent a prompt to your phone. Enter your PIN to approve {heroTotal}. This page updates by itself.</p>
               {slow && <p className="give-ref">Still waiting. If nothing came, go back and try again.</p>}
-              <button className="give-link" onClick={again}>Go back</button>
+              <button className="give-link" onClick={again}>Cancel and go back</button>
             </div>
           )}
 
@@ -315,7 +335,7 @@ export default function GiveForm(props: {
           {phase === "otp" && (
             <div className="give-state">
               <h2>Enter your code</h2>
-              <p>Your network sent you a code. Enter it to continue.</p>
+              <p>Your network sent you a one-time code. It can take up to a minute to arrive.</p>
               <input
                 className="give-input"
                 inputMode="numeric"
@@ -331,23 +351,29 @@ export default function GiveForm(props: {
           )}
 
           {phase === "paid" && (
-            <div className="give-state">
-              <div className="give-tick" aria-hidden="true">
-                <svg width="34" height="34" viewBox="0 0 24 24">
-                  <path d="M5 12.5l4.5 4.5L19 7.5" />
-                </svg>
-              </div>
-              <h2>Thank you</h2>
-              <p>Your gift to {props.churchName} has been received. God bless you.</p>
-              <p className="give-ref">Reference {reference}</p>
-              <button className="give-link" onClick={again}>Give again</button>
+            <div className="give-state wide">
+              {fees && (
+                <div className="give-sum" aria-label="Receipt">
+                  <p className="give-row"><span>Gift</span><span>{formatCedis(fees.giftPesewas)}</span></p>
+                  <p className="give-row"><span>Fees</span><span>{formatCedis(fees.feePesewas)}</span></p>
+                  <p className="give-row big"><span>Total</span><span>{formatCedis(fees.totalPesewas)}</span></p>
+                </div>
+              )}
+              <p className="give-refbox"><span>Reference</span><span>{reference}</span></p>
+              <button className="give-button" onClick={again}>Give again</button>
             </div>
           )}
 
           {phase === "failed" && (
-            <div className="give-state">
-              <h2>Payment not completed</h2>
+            <div className="give-state wide">
+              <h2>Your gift did not go through</h2>
               <p className="give-error">{error || "The payment did not go through."}</p>
+              <p className="give-steps-title">What to do next</p>
+              <ol className="give-steps">
+                <li>Check you have enough in your mobile money wallet.</li>
+                <li>Make sure the number is registered on the network you chose and your phone has signal.</li>
+                <li>Try again. If it fails twice, choose another network or ask your church office.</li>
+              </ol>
               <button className="give-button" onClick={again}>Try again</button>
             </div>
           )}
