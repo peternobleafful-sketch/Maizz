@@ -87,3 +87,7 @@ The design brief is `docs/design.md`. The Claude Design mock-ups (giving page, h
 ## Step 9, part 1: church sign-in
 
 People who sign in for a church are added from the owner tools (setup check page, Team). They get an email link to choose a password. To sign in they enter email and password, then a six-digit code sent to their email. Pages: `/church/sign-in`, `/church/invite`, `/church`. Needs migration `0006_church_staff.sql` and the settings `STAFF_SECRET`, `RESEND_API_KEY` and `MAIZZ_FROM_EMAIL`. The dashboard screens (overview, gifts, payouts, team, settings) come next.
+
+## Step 9, part 2: church dashboard
+
+Signed-in church people see: Overview (last 7 days, this month, all time, by gift type, latest gifts), Gifts (filters, detail, CSV for finance and owners), Payouts (payout account, totals; payout history later), Team and Settings (owners), and a printable QR share card. Pages are in `src/app/church/(app)`. Roles: viewer, finance, owner. Still to do: payout history from the payment provider, receipts, the Church Manager "My giving" link (step 8), pausing giving from the dashboard, password reset.

@@ -57,6 +57,9 @@ Ledger and database
 Church sign-in (step 9, part 1)
 - `src/lib/staff.ts`, `src/lib/staffStore.ts`, `src/lib/staffRuntime.ts`, `src/app/api/staff/*`, `src/app/api/admin/staff`, `supabase/migrations/0006_church_staff.sql`: password hashing settings, lock-out numbers, the email code as second factor (is it enough?), whether responses leak which emails exist (they should not), session cookie flags (HttpOnly, SameSite=Lax, Secure in production) and the same-origin check on sign-in calls, invite links (48 hours, one use) and who may invite (today only the owner tool), `STAFF_SECRET` handling, the email provider and its sending domain, and what the audit log keeps (no emails, names, codes or hashes).
 
+Church dashboard (step 9, part 2)
+- `src/lib/churchData.ts`, `src/lib/staffSession.ts`, `src/app/church/(app)/*`, `src/app/api/church/*`: every query is scoped to the church of the signed-in session (never a church id from the request); roles are checked on the server (viewer: overview and gifts; finance: payouts and CSV; owner: team and settings); phone numbers are never read; anonymous gifts show no name; CSV downloads are written to the audit log first and defuse spreadsheet formulas; removing a person ends their sessions at once. Gift lists read at most 5,000 recent paid gifts in memory (fine for a pilot, needs database-side totals before large churches). Payout history is not shown yet.
+
 Access and secrets
 - Vercel environment settings: which keys exist in which environments, who can see them, and the `Sensitive` flag.
 - `supabase/migrations/0002_audit.sql`, `src/lib/audit.ts`: what is logged, scrubbing of secrets, source fingerprint (hashed address), throttle on webhook entries, whether audit rows need exporting off-site.
