@@ -132,7 +132,7 @@ export async function startCheckout(args: {
   const { ledger, provider, input, testMode } = args;
   const church = await ledger.findChurch(input.churchSlug);
   const unavailable = new CheckoutError("church_unavailable", "This church cannot receive gifts right now.");
-  if (!church || church.status !== "active") throw unavailable;
+  if (!church || church.status !== "active" || church.paused) throw unavailable;
   // Real churches are paid straight into their own payout account. Only in test mode may a church
   // without one take a (test) gift. This stops real money landing in Maizz's account by mistake.
   if (!church.subaccountCode && !testMode) throw unavailable;

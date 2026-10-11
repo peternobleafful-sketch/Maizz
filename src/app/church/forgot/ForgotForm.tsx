@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 
-export default function ForgotForm() {
+export default function ForgotForm({ area = "church" }: { area?: "church" | "owner" }) {
+  const api = area === "owner" ? "/api/owner" : "/api/staff";
+  const home = area === "owner" ? "/owner" : "/church";
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
@@ -12,7 +14,7 @@ export default function ForgotForm() {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/staff/reset-request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+      const res = await fetch(`${api}/reset-request`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
       if (res.ok) setSent(true);
       else setError("Something went wrong. Try again in a minute.");
     } catch {
@@ -39,7 +41,7 @@ export default function ForgotForm() {
         </header>
         <section className="give-sheet">
           {sent ? (
-            <a className="give-button as-link" href="/church/sign-in">Back to sign-in</a>
+            <a className="give-button as-link" href={`${home}/sign-in`}>Back to sign-in</a>
           ) : (
             <form
               className="give-form"
@@ -54,7 +56,7 @@ export default function ForgotForm() {
               </div>
               {error && <p className="give-error" role="alert">{error}</p>}
               <button className="give-button" type="submit" disabled={busy || !email.includes("@")}>{busy ? "Sending…" : "Send reset link"}</button>
-              <a className="give-link" href="/church/sign-in">Back to sign-in</a>
+              <a className="give-link" href={`${home}/sign-in`}>Back to sign-in</a>
             </form>
           )}
         </section>

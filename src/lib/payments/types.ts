@@ -107,8 +107,20 @@ export interface PaymentProvider {
   listPayoutBanks(): Promise<PayoutBank[]>;
   /** Sets up a church's payout account. No money moves. */
   createPayoutAccount(input: CreatePayoutAccountInput): Promise<PayoutAccount>;
+  /** What the provider has paid out to one church's account, newest first. Optional: a provider may not offer it. */
+  listPayouts?(subaccountCode: string): Promise<PayoutRecord[]>;
   /** Checks the signature and turns the provider's notice into a WebhookEvent. Throws if it is not genuine. */
   parseWebhook(rawBody: string, signature: string | null): WebhookEvent;
+}
+
+/** One payout the provider has made (or is making) to a church's account. */
+export interface PayoutRecord {
+  id: string;
+  status: "paid" | "pending" | "failed";
+  /** Whole pesewas actually sent to the account. */
+  amountPesewas: number;
+  /** When it was (or will be) paid, ISO text. */
+  date: string;
 }
 
 export class ProviderError extends Error {

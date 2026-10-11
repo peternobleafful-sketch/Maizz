@@ -415,3 +415,54 @@ describe("church payout accounts", () => {
     expect(calls[1]!.url).toContain("type=ghipss");
   });
 });
+
+describe("listing payouts", () => {
+  const CODE = "ACCT_abc123xyz";
+
+  it("asks for one church's payouts only, and shows the newest first in whole pesewas", async () => {
+    const { p, calls } = provider([
+      {
+        json: {
+          status: true,
+          data: [
+            { id: 1, status: "success", effective_amount: 50_000, total_amount: 52_000, settlement_date: "2026-10-01T00:00:00.000Z" },
+            { id: 2, status: "pending", total_amount: 20_000, settlement_date: "2026-10-09T00:00:00.000Z" },
+            { id: 3, status: "failed", effective_amount: 1_000, createdAt: "2026-10-05T00:00:00.000Z" },
+          ],
+        },
+      },
+    ]);
+    const out = await p.listPayouts!(CODE);
+    expect(out.map((o) => [o.id, o.status, o.amountPesewas])).toEqual([
+      ["2", "pending", 20_000],
+      ["3", "failed", 1_000],
+      ["1", "paid", 50_000],
+    ]);
+    expect(calls[0]!.url).toContain(`/settlement?subaccount=${CODE}`);
+    expect(calls[0]!.method).toBe("GET");
+  });
+
+  it("skips a row it cannot trust instead of guessing", async () => {
+    const { p } = provider([
+      {
+        json: {
+          status: true,
+          data: [
+            { id: 1, status: "success", effective_amount: 100.5, settlement_date: "2026-10-01T00:00:00.000Z" },
+            { id: 2, status: "success", effective_amount: "5000", settlement_date: "2026-10-01T00:00:00.000Z" },
+            { id: 3, status: "success", effective_amount: 5_000, settlement_date: "not a date" },
+            { id: 4, status: "success", effective_amount: 5_000, settlement_date: "2026-10-01T00:00:00.000Z" },
+          ],
+        },
+      },
+    ]);
+    expect((await p.listPayouts!(CODE)).map((o) => o.id)).toEqual(["4"]);
+  });
+
+  it("refuses a code that is not a payout account, and reports a provider failure", async () => {
+    const { p } = provider([]);
+    await expect(p.listPayouts!("../../transaction")).rejects.toBeInstanceOf(ProviderError);
+    const bad = provider([{ status: 500, json: { status: false } }]);
+    await expect(bad.p.listPayouts!(CODE)).rejects.toThrow(/payout list/);
+  });
+});

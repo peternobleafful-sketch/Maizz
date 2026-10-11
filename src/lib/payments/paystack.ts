@@ -11,6 +11,7 @@ import {
   type PaymentProvider,
   type PayoutAccount,
   type PayoutBank,
+  type PayoutRecord,
   type ProviderStatus,
   type RefundInput,
   type RefundResult,
@@ -82,7 +83,7 @@ export function createPaystackProvider(opts: PaystackOptions): PaymentProvider {
     return json.data;
   }
 
-  async function callList(path: string): Promise<Rec[]> {
+  async function callList(path: string, what = "the list of banks"): Promise<Rec[]> {
     let res: Response;
     try {
       res = await fetchFn(`${API}${path}`, {
@@ -94,7 +95,7 @@ export function createPaystackProvider(opts: PaystackOptions): PaymentProvider {
     }
     const json: unknown = await res.json().catch(() => null);
     if (!res.ok || !isRec(json) || json.status !== true || !Array.isArray(json.data)) {
-      throw new ProviderError("Could not read the list of banks", res.status);
+      throw new ProviderError(`Could not read ${what}`, res.status);
     }
     return json.data.filter(isRec);
   }
@@ -188,6 +189,26 @@ export function createPaystackProvider(opts: PaystackOptions): PaymentProvider {
       const url = text(data.authorization_url);
       if (!url || !url.startsWith("https://")) throw new ProviderError("Paystack sent no payment page");
       return { kind: "redirect", url };
+    },
+
+    async listPayouts(subaccountCode: string): Promise<PayoutRecord[]> {
+      if (!SUBACCOUNT.test(subaccountCode)) throw new ProviderError("Invalid payout account code");
+      const data = await callList(`/settlement?subaccount=${encodeURIComponent(subaccountCode)}&perPage=50`, "the payout list");
+      const out: PayoutRecord[] = [];
+      for (const r of data) {
+        // Only whole pesewas are ever shown. A row that is not is skipped, never guessed.
+        const raw = typeof r.effective_amount === "number" ? r.effective_amount : r.total_amount;
+        const date = text(r.settlement_date) ?? text(r.createdAt) ?? text(r.created_at);
+        if (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 0 || !date || Number.isNaN(Date.parse(date))) continue;
+        const s = (text(r.status) ?? "").toLowerCase();
+        out.push({
+          id: String(r.id ?? `${date}-${raw}`),
+          status: s === "success" || s === "processed" || s === "paid" ? "paid" : s === "failed" ? "failed" : "pending",
+          amountPesewas: raw,
+          date,
+        });
+      }
+      return out.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
     },
 
     async listPayoutBanks(): Promise<PayoutBank[]> {

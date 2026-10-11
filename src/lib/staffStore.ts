@@ -6,18 +6,21 @@ const isRec = (v: unknown): v is Rec => typeof v === "object" && v !== null && !
 const ms = (v: unknown): number | null => (typeof v === "string" ? Date.parse(v) : null);
 
 const USER_COLUMNS = "id,church_id,email,full_name,role,status,password_hash,failed_attempts,locked_until";
+// The Maizz owner's people have no church and no role, only the owner role.
+const OWNER_COLUMNS = "id,email,full_name,status,password_hash,failed_attempts,locked_until";
+export const PLATFORM = "platform";
 const TOKEN_COLUMNS = "id,user_id,kind,token_hash,attempts,expires_at,used_at";
 
-function toUser(row: unknown): StaffUser {
-  if (!isRec(row) || typeof row.id !== "string" || typeof row.church_id !== "string" || typeof row.email !== "string") {
+function toUser(row: unknown, owner = false): StaffUser {
+  if (!isRec(row) || typeof row.id !== "string" || typeof row.email !== "string" || (!owner && typeof row.church_id !== "string")) {
     throw new StaffError("unavailable", "Unexpected person row from the database");
   }
   return {
     id: row.id,
-    churchId: row.church_id,
+    churchId: owner ? PLATFORM : String(row.church_id),
     email: row.email,
     fullName: typeof row.full_name === "string" ? row.full_name : "",
-    role: row.role as Role,
+    role: owner ? "owner" : (row.role as Role),
     status: row.status as UserStatus,
     passwordHash: typeof row.password_hash === "string" ? row.password_hash : null,
     failedAttempts: typeof row.failed_attempts === "number" ? row.failed_attempts : 0,
@@ -40,7 +43,18 @@ function toToken(row: unknown): StaffToken {
   };
 }
 
-export function createSupabaseStaffStore(opts: { url: string; serviceKey: string; fetchFn?: typeof fetch }): StaffStore {
+export function createSupabaseStaffStore(opts: {
+  url: string;
+  serviceKey: string;
+  fetchFn?: typeof fetch;
+  /** "owner" reads the Maizz owner's own people and tokens. Default "church". */
+  area?: "church" | "owner";
+}): StaffStore {
+  const owner = opts.area === "owner";
+  const usersTable = owner ? "owner_users" : "church_users";
+  const tokensTable = owner ? "owner_tokens" : "staff_tokens";
+  const COLS = owner ? OWNER_COLUMNS : USER_COLUMNS;
+  const user = (row: unknown) => toUser(row, owner);
   const base = `${opts.url.replace(/\/+$/, "")}/rest/v1`;
   const fetchFn = opts.fetchFn ?? fetch;
   const headers: Record<string, string> = { apikey: opts.serviceKey, "Content-Type": "application/json" };
@@ -71,26 +85,27 @@ export function createSupabaseStaffStore(opts: { url: string; serviceKey: string
 
   return {
     async findUserByEmail(email) {
-      const r = (await rows(await request("GET", `church_users?email=eq.${q(email)}&select=${USER_COLUMNS}&limit=1`), "person lookup"))[0];
-      return r === undefined ? null : toUser(r);
+      const r = (await rows(await request("GET", `${usersTable}?email=eq.${q(email)}&select=${COLS}&limit=1`), "person lookup"))[0];
+      return r === undefined ? null : user(r);
     },
     async getUser(id) {
-      const r = (await rows(await request("GET", `church_users?id=eq.${q(id)}&select=${USER_COLUMNS}&limit=1`), "person lookup"))[0];
-      return r === undefined ? null : toUser(r);
+      const r = (await rows(await request("GET", `${usersTable}?id=eq.${q(id)}&select=${COLS}&limit=1`), "person lookup"))[0];
+      return r === undefined ? null : user(r);
     },
     async listUsers(churchId) {
-      const res = await request("GET", `church_users?church_id=eq.${q(churchId)}&select=${USER_COLUMNS}&order=created_at.asc&limit=200`);
-      return (await rows(res, "team list")).map(toUser);
+      const scope = owner ? "" : `church_id=eq.${q(churchId)}&`;
+      const res = await request("GET", `${usersTable}?${scope}select=${COLS}&order=created_at.asc&limit=200`);
+      return (await rows(res, "team list")).map(user);
     },
     async createUser(u) {
       const res = await request(
         "POST",
-        "church_users",
-        { church_id: u.churchId, email: u.email, full_name: u.fullName, role: u.role },
+        usersTable,
+        owner ? { email: u.email, full_name: u.fullName } : { church_id: u.churchId, email: u.email, full_name: u.fullName, role: u.role },
         "return=representation",
       );
       if (res.status === 409) throw new StaffError("exists", "Someone with that email already has an account.");
-      return toUser((await rows(res, "person creation"))[0]);
+      return user((await rows(res, "person creation"))[0]);
     },
     async updateUser(id, patch) {
       const body: Rec = {};
@@ -98,13 +113,13 @@ export function createSupabaseStaffStore(opts: { url: string; serviceKey: string
       if (patch.status !== undefined) body.status = patch.status;
       if (patch.failedAttempts !== undefined) body.failed_attempts = patch.failedAttempts;
       if (patch.lockedUntil !== undefined) body.locked_until = patch.lockedUntil === null ? null : iso(patch.lockedUntil);
-      const res = await request("PATCH", `church_users?id=eq.${q(id)}`, body, "return=representation");
+      const res = await request("PATCH", `${usersTable}?id=eq.${q(id)}`, body, "return=representation");
       if ((await rows(res, "person update")).length !== 1) throw new StaffError("unavailable", "That person was not found");
     },
     async createToken(t) {
       const res = await request(
         "POST",
-        "staff_tokens",
+        tokensTable,
         { user_id: t.userId, kind: t.kind, token_hash: t.tokenHash, expires_at: iso(t.expiresAt) },
         "return=representation",
       );
@@ -113,31 +128,31 @@ export function createSupabaseStaffStore(opts: { url: string; serviceKey: string
       return created.id;
     },
     async findTokenByHash(kind, tokenHash) {
-      const res = await request("GET", `staff_tokens?kind=eq.${kind}&token_hash=eq.${q(tokenHash)}&select=${TOKEN_COLUMNS}&limit=1`);
+      const res = await request("GET", `${tokensTable}?kind=eq.${kind}&token_hash=eq.${q(tokenHash)}&select=${TOKEN_COLUMNS}&limit=1`);
       const r = (await rows(res, "token lookup"))[0];
       return r === undefined ? null : toToken(r);
     },
     async getToken(id) {
-      const r = (await rows(await request("GET", `staff_tokens?id=eq.${q(id)}&select=${TOKEN_COLUMNS}&limit=1`), "token lookup"))[0];
+      const r = (await rows(await request("GET", `${tokensTable}?id=eq.${q(id)}&select=${TOKEN_COLUMNS}&limit=1`), "token lookup"))[0];
       return r === undefined ? null : toToken(r);
     },
     async consumeToken(id) {
       const res = await request(
         "PATCH",
-        `staff_tokens?id=eq.${q(id)}&used_at=is.null`,
+        `${tokensTable}?id=eq.${q(id)}&used_at=is.null`,
         { used_at: new Date().toISOString() },
         "return=representation",
       );
       return (await rows(res, "token use")).length === 1;
     },
     async setTokenAttempts(id, attempts) {
-      await rows(await request("PATCH", `staff_tokens?id=eq.${q(id)}`, { attempts }, "return=representation"), "token update");
+      await rows(await request("PATCH", `${tokensTable}?id=eq.${q(id)}`, { attempts }, "return=representation"), "token update");
     },
     async revokeTokens(userId, kind) {
       await rows(
         await request(
           "PATCH",
-          `staff_tokens?user_id=eq.${q(userId)}&kind=eq.${kind}&used_at=is.null`,
+          `${tokensTable}?user_id=eq.${q(userId)}&kind=eq.${kind}&used_at=is.null`,
           { used_at: new Date().toISOString() },
           "return=representation",
         ),

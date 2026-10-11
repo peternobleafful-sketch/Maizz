@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import ChurchesAdmin from "./ChurchesAdmin";
+import OwnersAdmin from "./OwnersAdmin";
 
 interface Check {
   id: string;
@@ -244,6 +245,7 @@ export default function SetupCheckClient() {
       )}
 
       {checks && <ChurchesAdmin token={token} />}
+      {checks && <OwnersAdmin token={token} />}
 
       {checks && (
         <section className="tool-section">

@@ -13,7 +13,9 @@ async function post(path: string, body: unknown): Promise<{ ok: boolean; data: R
   }
 }
 
-export default function SignInForm() {
+export default function SignInForm({ area = "church" }: { area?: "church" | "owner" }) {
+  const api = area === "owner" ? "/api/owner" : "/api/staff";
+  const home = area === "owner" ? "/owner" : "/church";
   const [step, setStep] = useState<Step>("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,7 +27,7 @@ export default function SignInForm() {
   async function submitPassword() {
     setBusy(true);
     setError("");
-    const r = await post("/api/staff/sign-in", { email, password });
+    const r = await post(`${api}/sign-in`, { email, password });
     setBusy(false);
     if (r.ok && typeof r.data.challenge === "string") {
       setChallenge(r.data.challenge);
@@ -37,9 +39,9 @@ export default function SignInForm() {
   async function submitCode() {
     setBusy(true);
     setError("");
-    const r = await post("/api/staff/code", { challenge, code });
+    const r = await post(`${api}/code`, { challenge, code });
     if (r.ok) {
-      window.location.assign("/church");
+      window.location.assign(home);
       return;
     }
     setBusy(false);
@@ -58,11 +60,11 @@ export default function SignInForm() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="give-logo" src="/brand/maizz-logo-white.png" alt="Maizz" width={1101} height={296} />
           </div>
-          <p className="give-eyebrow">CHURCH DASHBOARD</p>
+          <p className="give-eyebrow">{area === "owner" ? "MAIZZ OWNER" : "CHURCH DASHBOARD"}</p>
           <h1 className="give-thanks tight">{step === "password" ? "Sign in" : "Check your email"}</h1>
           <p className="give-lede">
             {step === "password"
-              ? "Use the email your church owner invited."
+              ? (area === "owner" ? "Use the email you were invited with." : "Use the email your church owner invited.")
               : "We sent a six-digit code to your email. It works for 10 minutes."}
           </p>
         </header>
@@ -87,7 +89,7 @@ export default function SignInForm() {
               <button className="give-button" type="submit" disabled={busy || !email.trim() || !password}>
                 {busy ? "Checking…" : "Continue"}
               </button>
-              <a className="give-link" href="/church/forgot">Forgot your password?</a>
+              <a className="give-link" href={`${home}/forgot`}>Forgot your password?</a>
               <p className="give-hint">A code is sent to your email every time you sign in, so only you can get in.</p>
             </form>
           ) : (

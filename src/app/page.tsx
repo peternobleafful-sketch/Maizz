@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { addFees } from "@/lib/fees";
 import { formatCedis } from "@/lib/money";
 
@@ -20,14 +21,26 @@ export default function HomePage() {
     <div className="site">
       <header className="site-hero">
         <div className="site-wrap">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className="site-logo" src="/brand/maizz-logo-white.png" alt="Maizz" width={1101} height={296} />
+          <div className="site-bar">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="site-logo" src="/brand/maizz-logo-white.png" alt="Maizz" width={1101} height={296} />
+            <nav className="site-nav" aria-label="Main">
+              <a href="#how">How it works</a>
+              <a href="#fees">Fees</a>
+              <a href="#security">Security</a>
+              <Link href="/church/sign-in">Church sign-in</Link>
+              <Link className="site-nav-cta" href="/register">Register your church</Link>
+            </nav>
+          </div>
           <p className="site-eyebrow">COMING SOON</p>
           <h1>Church giving by mobile money is coming soon.</h1>
           <p className="site-lede">
             Maizz is opening for churches in Ghana. Tithes, offerings and seeds from any phone, in under a minute. Your
             church receives the full gift.
           </p>
+          <div className="site-actions">
+            <Link className="site-btn" href="/register">Register your church</Link>
+          </div>
         </div>
       </header>
 
@@ -39,7 +52,7 @@ export default function HomePage() {
         </p>
       </section>
 
-      <section className="site-band">
+      <section className="site-band" id="how">
         <div className="site-wrap site-stack">
           <h2>How it works</h2>
           <div className="site-cards">
@@ -54,7 +67,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="site-wrap site-split centre">
+      <section className="site-wrap site-split centre" id="fees">
         <div className="site-stack">
           <h2>Fees, explained plainly</h2>
           <p>Givers cover the fees. The giver sees the fee before paying. The church receives the full gift, every time.</p>
@@ -68,7 +81,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="site-band">
+      <section className="site-band" id="security">
         <div className="site-wrap site-stack">
           <h2>Security promises</h2>
           <div className="site-cards four">

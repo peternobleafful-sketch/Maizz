@@ -120,9 +120,22 @@ describe("supabase ledger: churches and givers", () => {
       payoutBankName: null,
       payoutAccountLast4: null,
       payoutAccountName: null,
+      paused: false,
     });
     expect(await l.findChurch("nope")).toBeNull();
+    expect(calls[0]!.url).toContain("giving_paused");
     expect(calls.every((c) => c.method === "GET")).toBe(true);
+  });
+
+  it("reads a church's own pause switch, and sets it without touching its status", async () => {
+    const paused = ledger([{ json: [{ ...CHURCH_ROW, giving_paused: true }] }]);
+    expect((await paused.l.findChurch("grace"))!.paused).toBe(true);
+    const set = ledger([{ json: [{ id: "c1" }] }]);
+    await set.l.setChurchPaused("c1", true);
+    expect(set.calls[0]!.method).toBe("PATCH");
+    expect(set.calls[0]!.body).toEqual({ giving_paused: true });
+    const missing = ledger([{ json: [] }]);
+    await expect(missing.l.setChurchPaused("c1", true)).rejects.toThrow(/not found/);
   });
 
   it("creates a giver with name and number only", async () => {

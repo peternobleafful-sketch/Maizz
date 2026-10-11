@@ -38,6 +38,18 @@ export function slugFromName(name: string): string {
     .replace(/-+$/g, "");
 }
 
+/** A web address for a new church that nobody is using yet. "short" or "crowded" if none can be made. */
+export async function freeSlug(ledger: Ledger, name: string): Promise<string> {
+  const base = slugFromName(name);
+  if (base.length < 2) return "short";
+  let slug = base;
+  for (let i = 2; await ledger.findChurch(slug); i += 1) {
+    if (i > 20) return "crowded";
+    slug = `${base.slice(0, 55)}-${i}`;
+  }
+  return slug;
+}
+
 const bad = (error: string, status = 400): ChurchReply => ({ status, body: { error } });
 
 function text(v: unknown): string {
@@ -62,13 +74,9 @@ export async function runChurchAction(args: {
       case "create": {
         const name = text(body.name).replace(/\s+/g, " ");
         if (name.length < 2 || name.length > 100) return bad("Enter the church's name.");
-        const base = slugFromName(name);
-        if (base.length < 2) return bad("Use letters or numbers in the church's name.");
-        let slug = base;
-        for (let i = 2; await ledger.findChurch(slug); i += 1) {
-          if (i > 20) return bad("Too many churches with a similar name. Add a town to the name.");
-          slug = `${base.slice(0, 55)}-${i}`;
-        }
+        const slug = await freeSlug(ledger, name);
+        if (slug === "short") return bad("Use letters or numbers in the church's name.");
+        if (slug === "crowded") return bad("Too many churches with a similar name. Add a town to the name.");
         const church = await ledger.createChurch({ slug, name });
         return { status: 200, body: { church: showChurch(church) } };
       }

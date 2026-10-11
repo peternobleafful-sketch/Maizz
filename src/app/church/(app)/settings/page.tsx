@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { requireChurchSession } from "@/lib/staffSession";
 import CopyButton from "../CopyButton";
 import SignOutButton from "../SignOutButton";
+import PauseGiving from "./PauseGiving";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Settings | Maizz", robots: { index: false } };
@@ -19,11 +20,18 @@ export default async function Settings() {
       <section className="dash-card">
         <h2>Giving page</h2>
         <dl className="dash-dl">
-          <div><dt>Status</dt><dd>{church.status === "active" ? "Open for giving" : church.status === "pending" ? "Not open yet" : "Paused"}</dd></div>
+          <div><dt>Status</dt><dd>{church.status === "active" ? (church.paused ? "Paused by your church" : "Open for giving") : church.status === "pending" ? "Not open yet" : "Paused by Maizz"}</dd></div>
         </dl>
         <div className="dash-link"><code>{link}</code><CopyButton text={link} /></div>
         <Link className="dash-btn ghost" href="/church/share">Open the printable share card</Link>
       </section>
+
+      {church.status === "active" ? (
+        <section className="dash-card">
+          <h2>Pause giving</h2>
+          <PauseGiving paused={church.paused} />
+        </section>
+      ) : null}
 
       <section className="dash-card">
         <h2>Your sign-in</h2>
@@ -40,7 +48,7 @@ export default async function Settings() {
         <h2>Roles</h2>
         <p className="dash-muted">
           Owners can do everything, including the team. Finance can see gifts, payouts and download the CSV. Viewers can see the
-          overview and gifts. To pause giving or change the payout account, contact Maizz.
+          overview and gifts. To change the payout account, contact Maizz.
         </p>
       </section>
     </>

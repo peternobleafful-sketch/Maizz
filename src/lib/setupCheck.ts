@@ -171,6 +171,19 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
           : "Could not check just now. Try again in a minute.",
     );
 
+    // 0008 adds the owner dashboard, church applications and the church's own pause switch.
+    const ownerTable = await status(fetchFn, `${rawUrl}/rest/v1/owner_users?select=id&limit=0`, headers);
+    add(
+      "owner_dashboard",
+      "Owner dashboard tables are installed",
+      ownerTable === 200,
+      ownerTable === 200
+        ? "Owner dashboard tables were found."
+        : ownerTable === 404 || ownerTable === 400
+          ? "Not found. Run 0008_owner_signup_pause.sql (in supabase/migrations) in the Supabase SQL Editor."
+          : "Could not check just now. Try again in a minute.",
+    );
+
     // The daily check leaves a note in the audit log every time it runs.
     const since = new Date(Date.now() - 26 * 3_600_000).toISOString();
     let ran: boolean | null = null;
@@ -199,6 +212,7 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
     add("locked", "Ledger refuses requests with no key", false, "Fix the Supabase settings above first.");
     add("church_accounts", "Church accounts are installed", false, "Fix the Supabase settings above first.");
     add("church_staff", "Church sign-in tables are installed", false, "Fix the Supabase settings above first.");
+    add("owner_dashboard", "Owner dashboard tables are installed", false, "Fix the Supabase settings above first.");
     add("reconcile", "Daily check of the books has run in the last 26 hours", false, "Fix the Supabase settings above first.");
   }
 

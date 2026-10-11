@@ -45,6 +45,7 @@ export function makeChurch(over: Partial<ChurchRecord> & { id: string; slug: str
     payoutBankName: null,
     payoutAccountLast4: null,
     payoutAccountName: null,
+    paused: false,
     ...over,
   };
 }
@@ -95,6 +96,12 @@ export class FakeLedger implements Ledger {
     const c = [...this.churches.values()].find((x) => x.id === churchId);
     if (!c) throw new Error("That church was not found");
     c.status = status;
+  }
+
+  async setChurchPaused(churchId: string, paused: boolean): Promise<void> {
+    const c = [...this.churches.values()].find((x) => x.id === churchId);
+    if (!c) throw new Error("That church was not found");
+    c.paused = paused;
   }
 
   async createGiver(g: NewGiver): Promise<string> {

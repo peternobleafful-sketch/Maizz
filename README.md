@@ -90,7 +90,7 @@ People who sign in for a church are added from the owner tools (setup check page
 
 ## Step 9, part 2: church dashboard
 
-Signed-in church people see: Overview (last 7 days, this month, all time, by gift type, latest gifts), Gifts (filters, detail, CSV for finance and owners), Payouts (payout account, totals; payout history later), Team and Settings (owners), and a printable QR share card. Pages are in `src/app/church/(app)`. Roles: viewer, finance, owner. Still to do: payout history from the payment provider, receipts, the Church Manager "My giving" link (step 8), pausing giving from the dashboard, password reset.
+Signed-in church people see: Overview (last 7 days, this month, all time, by gift type, latest gifts), Gifts (filters, detail, CSV for finance and owners), Payouts (payout account, totals; payout history later), Team and Settings (owners), and a printable QR share card. Pages are in `src/app/church/(app)`. Roles: viewer, finance, owner. Payout history, receipts, password reset and pausing giving are done (see below). Still to do: the Church Manager "My giving" link (step 8).
 
 ## Alerts, receipts, password reset and backups
 
@@ -99,3 +99,13 @@ Signed-in church people see: Overview (last 7 days, this month, all time, by gif
 - **Password reset:** `/church/forgot` and `/church/reset`. Needs migration `0007_password_reset.sql`.
 - **Books copy:** setup page, "Download the books" (CSV, no personal data).
 - **Incident plan:** `docs/INCIDENT_RESPONSE.md`.
+
+## Owner dashboard, church sign-up and pause giving (10 Oct 2026)
+
+Needs migration `0008_owner_signup_pause.sql`. The setup page shows "Owner dashboard tables are installed" once it is run.
+
+- **Owner dashboard** at `/owner` (own sign-in at `/owner/sign-in`, own people, own sessions and its own cookie, so a church sign-in can never open it). It shows totals across all churches, Maizz's own fee share, failed or waiting gifts, whether the daily check ran, every church, applications and recent alerts. Add the first owner from the setup page ("Maizz owners", at most 5). Payouts, opening and suspending a church stay on the setup page, behind the admin key.
+- **Church sign-up** at `/register`. It only saves an application (name, town, contact name, email, phone). Limits: 3 per connection per day, 100 waiting at once, a hidden box for robots. You get an alert email. Accepting an application in the owner dashboard adds the church as "pending" and emails the contact an invite as the church's owner. You still set up the payout account and open the church on the setup page.
+- **Pause giving**: a church owner can pause and resume their own page from Settings. A paused page shows a short message and refuses gifts; gifts already in progress still finish. This is separate from Maizz suspending a church, which a church cannot undo.
+- **Payout history** on the church Payouts page, read from the payment provider's settlements for that church's account. It could not be tested against the live provider, so it fails safely with a plain message.
+- **Home page** has a menu (How it works, Fees, Security, Church sign-in, Register your church).

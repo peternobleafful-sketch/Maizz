@@ -50,6 +50,23 @@ export default async function GivePage({ params }: { params: Promise<{ slug: str
     );
   }
   if (!found.church) notFound();
+  if (found.church.paused) {
+    return (
+      <div className="give-wrap">
+        <main className="give">
+          <header className="give-hero">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="give-logo" src="/brand/maizz-logo-white.png" alt="Maizz" width={1101} height={296} />
+            <p className="give-church">{found.church.name}</p>
+          </header>
+          <section className="give-sheet">
+            <h2>Giving is paused for now</h2>
+            <p>{found.church.name} has paused online giving. Please check with your church, or try again later.</p>
+          </section>
+        </main>
+      </div>
+    );
+  }
   const testMode = classifyPaystackKey(process.env.PAYSTACK_SECRET_KEY) === "test";
   const types = Object.entries(GIFT_TYPE_LABELS).map(([value, label]) => ({ value, label }));
   return <GiveForm slug={slug} churchName={found.church.name} testMode={testMode} types={types} />;

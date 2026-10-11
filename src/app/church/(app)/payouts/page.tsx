@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { netPesewas, summarise } from "@/lib/churchData";
 import { formatCedis } from "@/lib/money";
+import { getPaymentProvider } from "@/lib/payments";
+import type { PayoutRecord } from "@/lib/payments/types";
+import { shortDate } from "@/lib/format";
 import { requireChurchSession } from "@/lib/staffSession";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +14,18 @@ export default async function Payouts() {
   const gifts = await data.listPaidGifts(church.id, { limit: 5000 });
   const s = summarise(gifts, Date.now());
   const received = gifts.reduce((t, g) => t + netPesewas(g), 0);
+
+  // The payout list comes straight from the payment provider. If it cannot be read, say so plainly and show the rest.
+  let payouts: PayoutRecord[] | null = null;
+  let unavailable = false;
+  if (church.subaccountCode) {
+    try {
+      const provider = getPaymentProvider();
+      if (provider.listPayouts) payouts = await provider.listPayouts(church.subaccountCode);
+    } catch {
+      unavailable = true;
+    }
+  }
   return (
     <>
       <div className="dash-head"><h1>Payouts</h1><p>Where your gifts are paid to</p></div>
@@ -36,9 +51,31 @@ export default async function Payouts() {
 
       <section className="dash-card">
         <h2>Payout history</h2>
+        {payouts && payouts.length > 0 ? (
+          <ul className="dash-team plain">
+            {payouts.slice(0, 30).map((p) => (
+              <li key={p.id}>
+                <span className="who">
+                  <strong>{formatCedis(p.amountPesewas)}</strong>
+                  <small>{shortDate(p.date)}</small>
+                </span>
+                <span className="dash-meta">
+                  <span className={p.status === "paid" ? "tag tag-pass" : "tag tag-fix"}>{p.status === "paid" ? "PAID" : p.status === "failed" ? "FAILED" : "ON ITS WAY"}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="dash-muted">
+            {!church.subaccountCode
+              ? "No payout account is set up yet, so there are no payouts."
+              : unavailable || payouts === null
+                ? "The payout list could not be loaded just now. Try again in a few minutes, or check your account statement."
+                : "No payouts yet. A payout appears here once your payment provider has settled your gifts to your account."}
+          </p>
+        )}
         <p className="dash-muted">
-          Payouts are sent to your account automatically on Maizz&apos;s payout schedule. A list of each payout will appear here
-          once it is connected. Until then, check your account statement, and use the gifts list and CSV to match gifts to payouts.
+          Use this list with your account statement. To match gifts to a payout, use the gifts list and the CSV download. The payout amounts come from the payment provider and can arrive a day or two after the gifts.
         </p>
       </section>
     </>

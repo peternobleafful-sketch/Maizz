@@ -2,18 +2,21 @@ import { getAudit } from "./audit";
 import { ConfigError, requireSupabase, type Env } from "./config";
 import { requireMailer } from "./mailer";
 import { getNotifier } from "./notifyRuntime";
-import { createStaffService, StaffError, type StaffService } from "./staff";
+import { createStaffService, StaffError, type Area, type StaffService } from "./staff";
 import { createSupabaseStaffStore } from "./staffStore";
 
 export const STAFF_COOKIE = "maizz_staff";
+export const OWNER_COOKIE = "maizz_owner";
+export const cookieNameFor = (area: Area) => (area === "owner" ? OWNER_COOKIE : STAFF_COOKIE);
 
 /** Builds the sign-in service from settings. Throws a plain message if something is not set up. */
-export function getStaffService(env: Env = process.env, opts: { needMail?: boolean } = {}): StaffService {
+export function getStaffService(env: Env = process.env, opts: { needMail?: boolean; area?: Area } = {}): StaffService {
   const pepper = env.STAFF_SECRET?.trim() ?? "";
   if (pepper.length < 32) throw new ConfigError("STAFF_SECRET is not set (it needs at least 32 characters).");
   const { url, serviceKey } = requireSupabase(env);
   return createStaffService({
-    store: createSupabaseStaffStore({ url, serviceKey }),
+    store: createSupabaseStaffStore({ url, serviceKey, area: opts.area }),
+    area: opts.area,
     audit: getAudit(env),
     mailer: opts.needMail === false ? { send: async () => { throw new StaffError("unavailable", "no mail"); } } : requireMailer(env),
     pepper,
@@ -21,9 +24,9 @@ export function getStaffService(env: Env = process.env, opts: { needMail?: boole
   });
 }
 
-export function cookieHeader(value: string, maxAgeSeconds: number): string {
+export function cookieHeader(value: string, maxAgeSeconds: number, area: Area = "church"): string {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${STAFF_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`;
+  return `${cookieNameFor(area)}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`;
 }
 
 export function readCookie(req: Request, name = STAFF_COOKIE): string | undefined {

@@ -76,6 +76,75 @@ body {
   margin-bottom: clamp(32px, 8vw, 80px);
 }
 
+.site-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 24px;
+  margin-bottom: clamp(24px, 6vw, 64px);
+}
+
+.site-bar .site-logo {
+  margin: 0;
+}
+
+.site-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-left: -14px;
+}
+
+.site-nav a {
+  min-height: 48px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--paper);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.site-nav a:hover {
+  text-decoration: underline;
+}
+
+.site-nav a.site-nav-cta {
+  margin-left: 6px;
+  padding: 0 20px;
+  background: var(--paper);
+  color: var(--blue);
+  border-radius: 14px;
+  font-weight: 600;
+}
+
+.site-nav a.site-nav-cta:hover {
+  text-decoration: none;
+  background: #eef0ff;
+}
+
+.site-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.site-btn {
+  min-height: 56px;
+  padding: 0 28px;
+  display: inline-flex;
+  align-items: center;
+  background: var(--paper);
+  color: var(--blue);
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 1.05rem;
+  text-decoration: none;
+}
+
 .site-logo.small {
   height: 24px;
   margin: 0;
@@ -1728,5 +1797,58 @@ body {
     margin: 0 auto;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+}
+
+.dash-pause {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.dash-pause p {
+  margin: 0;
+}
+
+.dash-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.give-hint.inline {
+  display: inline;
+  margin: 0;
+  font-weight: 400;
+}
+
+/* A list with no avatar column (owner pages, payout history): name on top, details underneath. */
+.dash-team.plain li {
+  grid-template-columns: 1fr;
+}
+
+.dash-team.plain .dash-meta {
+  grid-column: 1;
+}
+
+.dash-team.plain .dash-role {
+  text-transform: none;
+}
+
+.dash-team.plain .who {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+@media (min-width: 720px) {
+  .dash-team.plain li {
+    grid-template-columns: 1fr auto;
+  }
+
+  .dash-team.plain .dash-meta {
+    grid-column: 2;
+    justify-content: flex-end;
   }
 }

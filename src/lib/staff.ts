@@ -8,6 +8,7 @@ export const ROLES = ["owner", "finance", "viewer"] as const;
 export type Role = (typeof ROLES)[number];
 export type UserStatus = "invited" | "active" | "disabled";
 export type TokenKind = "invite" | "code" | "session" | "reset";
+export type Area = "church" | "owner";
 
 export const STAFF_LIMITS = {
   codeMinutes: 10,
@@ -159,12 +160,18 @@ export function createStaffService(deps: {
   now?: () => number;
   /** Tells the owner about something odd (a person or place locked out). Must not throw. */
   alert?: (kind: string, subject: string, lines: string[]) => Promise<void>;
+  /** "owner" is the Maizz owner's own sign-in. It has its own people, links and sessions. Default "church". */
+  area?: Area;
 }) {
   const { store, audit, mailer } = deps;
   const now = deps.now ?? (() => Date.now());
   const minute = 60_000;
   if (deps.pepper.length < 32) throw new StaffError("unavailable", "STAFF_SECRET must be at least 32 characters.");
   const h = (v: string) => hashToken(v, deps.pepper);
+  const area: Area = deps.area ?? "church";
+  const actorOf = (id: string) => `${area === "owner" ? "owner" : "staff"}:${id}`;
+  const whoToTell = area === "owner" ? "change your password" : "tell your church owner";
+  const ask = area === "owner" ? "Sign in again, or ask for a new link." : "Ask your church owner to send a new one.";
 
   async function record(
     action: string,
@@ -172,7 +179,7 @@ export function createStaffService(deps: {
     sourceKey: string | undefined,
     userId?: string,
   ): Promise<void> {
-    await audit.record({ actor: userId ? `staff:${userId}` : "unknown", action, outcome, sourceKey, target: userId });
+    await audit.record({ actor: userId ? actorOf(userId) : "unknown", action, outcome, sourceKey, target: userId });
   }
 
   async function sourceLocked(sourceKey: string): Promise<boolean> {
@@ -193,8 +200,10 @@ export function createStaffService(deps: {
     });
     if (failures === STAFF_LIMITS.userFailures) {
       await record("staff.locked", "denied", sourceKey, user.id);
-      await deps.alert?.("staff_locked", "A church sign-in was locked after wrong attempts", [
-        "A person's church sign-in was locked for 15 minutes after five wrong passwords or codes.",
+      await deps.alert?.(area === "owner" ? "owner_locked" : "staff_locked", area === "owner" ? "The Maizz owner sign-in was locked after wrong attempts" : "A church sign-in was locked after wrong attempts", [
+        area === "owner"
+          ? "A Maizz owner sign-in was locked for 15 minutes after five wrong passwords or codes."
+          : "A person's church sign-in was locked for 15 minutes after five wrong passwords or codes.",
         "If they were not the one trying, someone may be guessing. Check the audit log (staff.signin_failed, staff.code_failed).",
       ]);
     }
@@ -227,10 +236,10 @@ export function createStaffService(deps: {
       const found = await store.findTokenByHash("invite", h(token));
       const user = found && found.usedAt === null && found.expiresAt > now() ? await store.getUser(found.userId) : null;
       if (!found || !user || user.status !== "invited") {
-        return { ok: false, reason: "invalid", message: "This link has expired or was already used. Ask your church owner to send a new one." };
+        return { ok: false, reason: "invalid", message: `This link has expired or was already used. ${ask}` };
       }
       if (!(await store.consumeToken(found.id))) {
-        return { ok: false, reason: "invalid", message: "This link has expired or was already used. Ask your church owner to send a new one." };
+        return { ok: false, reason: "invalid", message: `This link has expired or was already used. ${ask}` };
       }
       await store.updateUser(user.id, { passwordHash: await hashPassword(password), status: "active", failedAttempts: 0, lockedUntil: null });
       await record("staff.invite_accepted", "ok", undefined, user.id);
@@ -266,7 +275,7 @@ export function createStaffService(deps: {
         await mailer.send({
           to: usable.email,
           subject: `Your Maizz sign-in code is ${code}`,
-          text: `Your Maizz sign-in code is ${code}.\n\nIt works for ${STAFF_LIMITS.codeMinutes} minutes. If you did not try to sign in, ignore this email and tell your church owner.\n\nMaizz will never ask you for this code by phone or message.`,
+          text: `Your Maizz sign-in code is ${code}.\n\nIt works for ${STAFF_LIMITS.codeMinutes} minutes. If you did not try to sign in, ignore this email and ${whoToTell}.\n\nMaizz will never ask you for this code by phone or message.`,
         });
         await record("staff.code_sent", "ok", sourceKey, usable.id);
         return { ok: true, challenge };
@@ -324,7 +333,7 @@ export function createStaffService(deps: {
         await mailer.send({
           to: user.email,
           subject: "Reset your Maizz password",
-          text: `Hello ${user.fullName},\n\nSomeone asked to reset the password for your Maizz sign-in. Choose a new password here (the link works once, for ${STAFF_LIMITS.resetMinutes} minutes):\n${baseUrl.replace(/\/+$/, "")}/church/reset?token=${token}\n\nIf this was not you, ignore this email. Your password has not changed.`,
+          text: `Hello ${user.fullName},\n\nSomeone asked to reset the password for your Maizz sign-in. Choose a new password here (the link works once, for ${STAFF_LIMITS.resetMinutes} minutes):\n${baseUrl.replace(/\/+$/, "")}/${area}/reset?token=${token}\n\nIf this was not you, ignore this email. Your password has not changed.`,
         });
         await record("staff.reset_sent", "ok", sourceKey, user.id);
       } catch {
@@ -374,11 +383,12 @@ export function createStaffService(deps: {
       tokenHash: h(token),
       expiresAt: now() + STAFF_LIMITS.inviteHours * 60 * minute,
     });
-    const link = `${baseUrl.replace(/\/+$/, "")}/church/invite?token=${token}`;
+    const link = `${baseUrl.replace(/\/+$/, "")}/${area}/invite?token=${token}`;
+    const owner = area === "owner";
     await mailer.send({
       to: user.email,
-      subject: `You are invited to ${churchName} on Maizz`,
-      text: `Hello ${user.fullName},\n\nYou have been added to ${churchName} on Maizz as ${user.role}.\n\nChoose your password here (the link works once, for ${STAFF_LIMITS.inviteHours} hours):\n${link}\n\nIf you were not expecting this, ignore this email.`,
+      subject: owner ? "You are invited to run Maizz" : `You are invited to ${churchName} on Maizz`,
+      text: `Hello ${user.fullName},\n\n${owner ? "You have been added as an owner of Maizz." : `You have been added to ${churchName} on Maizz as ${user.role}.`}\n\nChoose your password here (the link works once, for ${STAFF_LIMITS.inviteHours} hours):\n${link}\n\nIf you were not expecting this, ignore this email.`,
     });
     await record("staff.invite_sent", "ok", undefined, user.id);
   }

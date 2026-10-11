@@ -26,7 +26,8 @@ When unsure, treat it as an incident. A false alarm costs little.
 1. **Write down the time** and what you saw. Do not delete anything.
 2. **Pause giving if money or data may be at risk.** Fastest ways, in this order:
    - Vercel: Settings, Environment Variables, delete `PAYSTACK_SECRET_KEY` for Production, then Redeploy. Giving stops (the page cannot start payments).
-   - Or suspend a single church from the setup page (Churches, Suspend church).
+   - Or suspend a single church from the setup page (Churches, Suspend church). A church's own owner can also pause their page from Settings, but a pause is not a security tool: only a suspension cannot be undone by the church.
+   - If someone may have got into the owner dashboard, ask Maizz owners to change their passwords (/owner/forgot). A new password signs that person out everywhere. Check the audit log for `staff.signin` by an `owner:` actor.
 3. **If a key may have leaked, rotate it now** (see below).
 4. **Tell the developer or reviewer** and keep a written log of every step you take.
 

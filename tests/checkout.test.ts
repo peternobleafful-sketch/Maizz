@@ -141,6 +141,13 @@ describe("startCheckout", () => {
     expect(ledger.givers).toHaveLength(0);
   });
 
+  it("refuses a gift while the church has paused its giving page", async () => {
+    ledger.churches.set("maizz-test-church", makeChurch({ id: "c1", slug: "maizz-test-church", name: "T", paused: true }));
+    await expect(run([])).rejects.toBeInstanceOf(CheckoutError);
+    expect(ledger.gifts).toHaveLength(0);
+    expect(ledger.givers).toHaveLength(0);
+  });
+
   describe("paying the church directly", () => {
     const withPayout = () =>
       ledger.churches.set(

@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 
-export default function ResetForm({ token }: { token: string }) {
+export default function ResetForm({ token, area = "church" }: { token: string; area?: "church" | "owner" }) {
+  const api = area === "owner" ? "/api/owner" : "/api/staff";
+  const home = area === "owner" ? "/owner" : "/church";
   const [password, setPassword] = useState("");
   const [again, setAgain] = useState("");
   const [busy, setBusy] = useState(false);
@@ -17,7 +19,7 @@ export default function ResetForm({ token }: { token: string }) {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/staff/reset", {
+      const res = await fetch(`${api}/reset`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, password }),
@@ -47,7 +49,7 @@ export default function ResetForm({ token }: { token: string }) {
         </header>
         <section className="give-sheet">
           {done ? (
-            <a className="give-button as-link" href="/church/sign-in">Go to sign-in</a>
+            <a className="give-button as-link" href={`${home}/sign-in`}>Go to sign-in</a>
           ) : (
             <form
               className="give-form"

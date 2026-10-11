@@ -45,6 +45,8 @@ export interface ChurchRecord {
   payoutAccountLast4: string | null;
   /** The account holder's name as the provider found it. */
   payoutAccountName: string | null;
+  /** The church paused its own giving page. Separate from Maizz suspending the church. */
+  paused: boolean;
 }
 
 export interface NewPayout {
@@ -90,6 +92,8 @@ export interface Ledger {
   listChurches(): Promise<ChurchRecord[]>;
   setChurchPayout(churchId: string, payout: NewPayout): Promise<void>;
   setChurchStatus(churchId: string, status: ChurchStatus): Promise<void>;
+  /** The church's own pause switch. Never changes the church's status. */
+  setChurchPaused(churchId: string, paused: boolean): Promise<void>;
   createGiver(giver: NewGiver): Promise<string>;
   createGift(gift: NewGift): Promise<GiftRecord>;
   /** Everything a receipt email needs, or null if the gift does not exist. */
@@ -136,7 +140,7 @@ function toGift(row: unknown): GiftRecord {
 }
 
 const CHURCH_COLUMNS =
-  "id,slug,name,status,provider_subaccount_code,payout_bank_name,payout_account_last4,payout_account_name";
+  "id,slug,name,status,provider_subaccount_code,payout_bank_name,payout_account_last4,payout_account_name,giving_paused";
 
 function str(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
@@ -161,6 +165,7 @@ function toChurch(row: unknown): ChurchRecord {
     payoutBankName: str(row.payout_bank_name),
     payoutAccountLast4: str(row.payout_account_last4),
     payoutAccountName: str(row.payout_account_name),
+    paused: row.giving_paused === true,
   };
 }
 
@@ -249,6 +254,11 @@ export function createSupabaseLedger(opts: {
     async setChurchStatus(churchId, status) {
       const res = await request("PATCH", `churches?id=eq.${encodeURIComponent(churchId)}`, { status }, "return=representation");
       if ((await rows(res, "status change")).length !== 1) throw new LedgerError("That church was not found");
+    },
+
+    async setChurchPaused(churchId, paused) {
+      const res = await request("PATCH", `churches?id=eq.${encodeURIComponent(churchId)}`, { giving_paused: paused }, "return=representation");
+      if ((await rows(res, "pause change")).length !== 1) throw new LedgerError("That church was not found");
     },
 
     async createGiver(giver) {
