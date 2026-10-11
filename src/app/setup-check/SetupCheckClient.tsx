@@ -191,6 +191,8 @@ export default function SetupCheckClient() {
       {message && <p className="tool-message">{message}</p>}
 
       {checks && (
+        <div className="tool-grid">
+        <div className="tool-col">
         <ul className="tool-list">
           {checks.map((c) => (
             <li key={c.id}>
@@ -202,10 +204,9 @@ export default function SetupCheckClient() {
             </li>
           ))}
         </ul>
-      )}
-
-      {checks && (
-        <section className="tool-section">
+        </div>
+        <div className="tool-col">
+        <section className="tool-section first">
           <h2>Test payment (test mode, GH₵1)</h2>
           <p className="tool-note">
             Use a test number from Paystack&apos;s test-mode documentation for Ghana mobile money. No real money moves.
@@ -242,12 +243,10 @@ export default function SetupCheckClient() {
           )}
           {testOutput && <p className="tool-message">{testOutput}</p>}
         </section>
-      )}
 
-      {checks && <ChurchesAdmin token={token} />}
-      {checks && <OwnersAdmin token={token} />}
+        <ChurchesAdmin token={token} />
+        <OwnersAdmin token={token} />
 
-      {checks && (
         <section className="tool-section">
           <h2>Daily check of the books</h2>
           <p className="tool-note">
@@ -258,9 +257,7 @@ export default function SetupCheckClient() {
           </button>
           {checkOutput && <p className="tool-message">{checkOutput}</p>}
         </section>
-      )}
 
-      {checks && (
         <section className="tool-section">
           <h2>Copy of the books</h2>
           <p className="tool-note">
@@ -271,6 +268,8 @@ export default function SetupCheckClient() {
           </button>
           {booksOutput && <p className="tool-message">{booksOutput}</p>}
         </section>
+        </div>
+        </div>
       )}
     </main>
   );

@@ -297,6 +297,52 @@ body {
   gap: 12px;
 }
 
+/* Setup page: the checks on the left, the tools on the right (stacked on a phone). */
+.tool-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tool-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+@media (min-width: 960px) {
+  .tool {
+    max-width: 1180px;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+
+  .tool > .tool-input,
+  .tool > .tool-button,
+  .tool > .tool-message,
+  .tool > .tool-note {
+    max-width: 600px;
+  }
+
+  .tool-grid {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 48px;
+    margin-top: 12px;
+  }
+
+  .tool-col {
+    flex: 1 1 0;
+  }
+
+  .tool-section.first {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+}
+
 .tool-logo {
   height: 28px;
   width: auto;
