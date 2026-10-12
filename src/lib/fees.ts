@@ -3,7 +3,7 @@ import { assertPositivePesewas, type Pesewas } from "./money";
 // Fees. Givers cover them, so the church receives exactly the gift.
 // Two parts, both on top of the gift:
 //   1. The payment provider's cut: Paystack Ghana, 1.95% on local cards and mobile money, no flat fee,
-//      no extra levies (confirmed with Paystack by Isaac, 10 Oct 2026). Rounding is still unconfirmed,
+//      no extra levies (confirmed with Paystack by Kobina, 10 Oct 2026). Rounding is still unconfirmed,
 //      so it is rounded up and checked against the real fee in the nightly check.
 //   2. Maizz's own fee: 1% of the gift, rounded up.
 // The provider's cut is charged on the whole payment (gift + Maizz fee + the provider's own cut),

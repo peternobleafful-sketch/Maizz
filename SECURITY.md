@@ -1,6 +1,6 @@
 # Maizz security rules
 
-These are Isaac's rules. Follow them in every step. Update the status and the reviewer list as the build grows.
+These are Kobina's rules. Follow them in every step. Update the status and the reviewer list as the build grows.
 
 ## The nine rules
 
@@ -12,7 +12,7 @@ These are Isaac's rules. Follow them in every step. Update the status and the re
 6. **Alerts for odd things:** many failed sign-ins, sudden large gifts, or the daily books not matching Paystack.
 7. **Least access:** each person and each part of the system gets only the access it needs.
 8. **Automatic backups, and a written plan** for what to do if something goes wrong.
-9. **Independent security review before any live money.** Remind Isaac before step 10, and whenever real money, a live key or a first church is mentioned. Keep the reviewer list below up to date.
+9. **Independent security review before any live money.** Remind Kobina before step 10, and whenever real money, a live key or a first church is mentioned. Keep the reviewer list below up to date.
 
 ## Status after the safety fixes (after step 3)
 
@@ -20,7 +20,7 @@ These are Isaac's rules. Follow them in every step. Update the status and the re
 | --- | --- | --- |
 | 1 Webhook signatures | Meets | HMAC-SHA512 check, constant-time compare, before anything is read or recorded. Amount and currency must match the gift. Repeats recorded once. Tested, including with the check switched off. |
 | 2 No secrets in code or chat | Meets | Scan of the repo found none. `.env` files are ignored by git. Setup page never returns a value. Keep it this way. |
-| 3 Sign-in limits and 2FA | Partly | Admin tools lock for 15 minutes after 5 wrong tokens. Church sign-in (step 9, part 1, 10 Oct 2026) is built: email and password, then a six-digit code emailed to the same address. Passwords are salted scrypt hashes; codes, invite links and sessions are stored only as keyed hashes. A person is locked for 15 minutes after 5 wrong passwords or codes, a source address after 10, codes last 10 minutes with 5 tries, sessions 12 hours. Password reset by emailed one-use link (1 hour) signs the person out everywhere. The Maizz owner has a separate sign-in (`/owner`, own tables, own cookie) with the same two steps. Not yet: an authenticator app or SMS as a second factor (the email code only proves the person can read that mailbox), and a per-session list. Isaac reports 2FA is on for GitHub, Vercel, Supabase and Paystack (reviewer to verify). |
+| 3 Sign-in limits and 2FA | Partly | Admin tools lock for 15 minutes after 5 wrong tokens. Church sign-in (step 9, part 1, 10 Oct 2026) is built: email and password, then a six-digit code emailed to the same address. Passwords are salted scrypt hashes; codes, invite links and sessions are stored only as keyed hashes. A person is locked for 15 minutes after 5 wrong passwords or codes, a source address after 10, codes last 10 minutes with 5 tries, sessions 12 hours. Password reset by emailed one-use link (1 hour) signs the person out everywhere. The Maizz owner has a separate sign-in (`/owner`, own tables, own cookie) with the same two steps. Not yet: an authenticator app or SMS as a second factor (the email code only proves the person can read that mailbox), and a per-session list. Kobina reports 2FA is on for GitHub, Vercel, Supabase and Paystack (reviewer to verify). |
 | 4 No card numbers or PINs | Meets | Mobile money PIN is entered on the giver's phone. Cards use Paystack's page. Maizz stores gift records and (later) names, phone numbers and emails, which are personal data for the Data Protection Commission. |
 | 5 Logging | Mostly meets | Gift changes are append-only rows in `gift_events`. Admin actions, failed admin tokens, refused webhooks, amount mismatches and giver edits/anonymising/church creation go to the append-only `audit_log` (no secrets, phone numbers or names). Needs `0002_audit.sql` run in Supabase. Not yet backed up (rule 8). |
 | 6 Alerts | Mostly meets | Email alerts (10 Oct 2026) to `ALERT_EMAIL` for: wrong payment signature, amount mismatch, invalid refund, large gift (default GH₵2,000, `ALERT_LARGE_GIFT_PESEWAS`), daily check problem, daily check missing (a second 08:00 watchdog), church sign-in locked, owner sign-in locked, owner tools locked, a new church application. At most one email per kind per hour; alerts never block a payment. Still to do: Sentry for software errors, and alerts to a second person or phone. Needs `ALERT_EMAIL`, `RESEND_API_KEY`, `MAIZZ_FROM_EMAIL`. |
@@ -93,5 +93,5 @@ Giving page (step 5): public routes `/api/checkout`, `/api/checkout/otp`, `/api/
 
 Later steps to add to this list as they are built
 - Church accounts (step 7): `supabase/migrations/0005_church_accounts.sql`, `src/lib/churchAdmin.ts`, `/api/admin/churches`, `src/lib/checkout.ts`. Look at: how a payment is split (`subaccount`, flat `transaction_charge`, `bearer: account`) and that the church gets exactly the gift; a church without a payout account may only take test gifts in test mode; the single owner approves every church (no second person yet, and no independent check of the church); payout account numbers pass through the server to the provider and are never stored or logged; account name comparison is done by eye; settlement schedule is not set by Maizz (set in the provider dashboard); payout fees are paid by Maizz in the pilot; the owner's 1% fee and tax/VAT treatment; whether the provider allows platform fees and split payments for Maizz's business type.
-- Fees maths (step 4, `src/lib/fees.ts`; now includes Maizz's 1%): 1.95% assumed, rounded up, gross-up so the church gets the gift; rate 1.95% and no extra levies confirmed by Isaac with Paystack (rounding still to confirm); compare with the real fee Paystack reports per payment (step 6); payout fees (GH₵1 to mobile money, GH₵8 to bank) belong to step 7.
+- Fees maths (step 4, `src/lib/fees.ts`; now includes Maizz's 1%): 1.95% assumed, rounded up, gross-up so the church gets the gift; rate 1.95% and no extra levies confirmed by Kobina with Paystack (rounding still to confirm); compare with the real fee Paystack reports per payment (step 6); payout fees (GH₵1 to mobile money, GH₵8 to bank) belong to step 7.
 - Receipts (step 5b), reconciliation and refunds (step 6), church sub-accounts and payouts (step 7), the Church Manager link (step 8), the church dashboard and its sign-in (step 9).

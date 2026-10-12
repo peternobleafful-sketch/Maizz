@@ -1,12 +1,12 @@
 # Maizz incident response plan
 
-Keep this short and keep it where Isaac can find it on a phone. Fill in the names and numbers marked **TO FILL IN** before the first real church. Review it every three months and after every incident.
+Keep this short and keep it where Kobina can find it on a phone. Fill in the names and numbers marked **TO FILL IN** before the first real church. Review it every three months and after every incident.
 
 ## Who to call
 
 | Role | Name | Phone | Email |
 | --- | --- | --- | --- |
-| Owner (decides, tells churches) | Isaac | **TO FILL IN** | **TO FILL IN** |
+| Owner (decides, tells churches) | Kobina (Peter Noble Afful on documents) | **TO FILL IN** | **TO FILL IN** |
 | Developer or reviewer on call | **TO FILL IN** | **TO FILL IN** | **TO FILL IN** |
 | Payment provider support (Paystack Ghana) | Paystack | **TO FILL IN** | support@paystack.com (confirm) |
 | Data Protection Commission (Ghana) | DPC | **TO FILL IN** | **TO FILL IN** |
