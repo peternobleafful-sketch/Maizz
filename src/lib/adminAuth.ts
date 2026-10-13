@@ -6,8 +6,8 @@ import { logError } from "./log";
 export const ADMIN_LIMITS = {
   /** Wrong tokens allowed from one source in the window before it is locked out. */
   perSource: 5,
-  /** Wrong tokens allowed from everyone together in the window before all attempts are locked out. */
-  global: 20,
+  /** Wrong tokens from everyone together in the window that trigger an alert email. Nothing is blocked. */
+  spikeAlert: 20,
   windowMinutes: 15,
 } as const;
 
@@ -24,7 +24,9 @@ function unavailable(message: string): Response {
 /**
  * Protects the private setup and test tools.
  * - Switched off (404) unless SETUP_CHECK_TOKEN is set and at least 24 characters.
- * - Repeated wrong tokens lock the tools for a while (429), even if the right token is then tried.
+ * - The secret is checked first. The right secret always goes through (and is audited), so nobody can shut the owner out by sending junk.
+ * - Only wrong secrets count. Repeated wrong secrets from one source lock that source only (429).
+ * - A burst of wrong secrets from many sources never blocks anyone; it only sends an alert.
  * - Every wrong attempt and every admin action is written to the permanent audit log first.
  * - If the audit log cannot be reached, the tools refuse to work (503). They never run unrecorded.
  * Returns null when the request may go ahead, or a Response to send back.
@@ -35,12 +37,14 @@ export async function adminGate(args: {
   audit: AuditLog;
   action: string;
   target?: string;
-  /** Which setting holds the secret. The daily check uses CRON_SECRET, everything else SETUP_CHECK_TOKEN. */
+  /** Which setting holds the secret. The daily check and the watchdog use CRON_SECRET, everything else SETUP_CHECK_TOKEN. */
   tokenEnv?: string;
-  /** What a wrong secret is logged as, and what the lock-out counts. */
+  /** What a wrong secret is logged as, and what the lock-out counts. Each caller group has its own. */
   failedAction?: string;
-  /** Called when the tools lock because of repeated wrong secrets. Must not throw. */
+  /** Called when one source locks because of repeated wrong secrets. Must not throw. */
   onLocked?: () => Promise<void>;
+  /** Called (alert only, nothing is blocked) when wrong secrets keep arriving from many sources. Must not throw. */
+  onSpike?: () => Promise<void>;
 }): Promise<Response | null> {
   const { req, env, audit, action, target } = args;
   const FAILED = args.failedAction ?? "admin.auth_failed";
@@ -51,38 +55,45 @@ export async function adminGate(args: {
   const sourceKey = sourceKeyFor(req, token);
   const wait = "The audit log is not available. Check that 0002_audit.sql has been run in Supabase and that the Supabase settings in Vercel are right.";
 
+  const header = req.headers.get("authorization") ?? "";
+  const sent = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  const ok = sent.length > 0 && timingSafeEqual(digest(sent), digest(token));
+
+  if (ok) {
+    try {
+      await audit.record({ actor: args.tokenEnv ? "cron" : "admin", action, outcome: "ok", sourceKey, target });
+    } catch {
+      logError("admin.audit_write_failed");
+      return unavailable(wait);
+    }
+    return null;
+  }
+
   try {
     const [mine, everyone] = await Promise.all([
       audit.countSince(FAILED, ADMIN_LIMITS.windowMinutes, sourceKey),
       audit.countSince(FAILED, ADMIN_LIMITS.windowMinutes),
     ]);
-    if (mine >= ADMIN_LIMITS.perSource || everyone >= ADMIN_LIMITS.global) {
+    if (mine >= ADMIN_LIMITS.perSource) {
       await args.onLocked?.();
       return Response.json(
-        { error: "locked", message: "Too many wrong attempts. The tools are locked for 15 minutes." },
+        { error: "locked", message: "Too many wrong attempts from this address. Try again in 15 minutes." },
         { status: 429, headers: { "Retry-After": String(ADMIN_LIMITS.windowMinutes * 60) } },
       );
     }
+    if (everyone >= ADMIN_LIMITS.spikeAlert) await args.onSpike?.();
   } catch {
     logError("admin.audit_unavailable");
     return unavailable(wait);
   }
 
-  const header = req.headers.get("authorization") ?? "";
-  const sent = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  const ok = sent.length > 0 && timingSafeEqual(digest(sent), digest(token));
-
   try {
-    if (!ok) {
-      await audit.record({ actor: "unknown", action: FAILED, outcome: "denied", sourceKey, target: action });
-      return Response.json({ error: "Not allowed" }, { status: 401 });
-    }
-    await audit.record({ actor: args.tokenEnv ? "cron" : "admin", action, outcome: "ok", sourceKey, target });
+    await audit.record({ actor: "unknown", action: FAILED, outcome: "denied", sourceKey, target: action });
   } catch {
     logError("admin.audit_write_failed");
     return unavailable(wait);
   }
-  return null;
+  return Response.json({ error: "Not allowed" }, { status: 401 });
 }
 
 /** For the routes: builds the audit log, then runs the gate. */
@@ -101,10 +112,17 @@ export async function openAdminRoute(
   }
   const onLocked = async () => {
     const { getNotifier } = await import("./notifyRuntime");
-    await getNotifier(env).alert("admin_locked", "The owner tools were locked after wrong attempts", [
-      "Someone tried the owner tools or the daily-check address with a wrong secret several times, so they were locked for 15 minutes.",
+    await getNotifier(env).alert("admin_locked", "One address was locked out of the owner tools", [
+      "Someone tried the owner tools or the daily-check address with a wrong secret several times, so that one address was locked for 15 minutes. The right secret still works for you.",
       "If this was not you, rotate SETUP_CHECK_TOKEN and CRON_SECRET in Vercel.",
     ]);
   };
-  return adminGate({ req, env, audit, action, target, onLocked, ...options });
+  const onSpike = async () => {
+    const { getNotifier } = await import("./notifyRuntime");
+    await getNotifier(env).alert("admin_spike", "Many wrong secrets are arriving at the owner tools", [
+      "Wrong secrets keep arriving from several addresses. Nothing is blocked and your own secret still works.",
+      "If this keeps happening, rotate SETUP_CHECK_TOKEN and CRON_SECRET in Vercel.",
+    ]);
+  };
+  return adminGate({ req, env, audit, action, target, onLocked, onSpike, ...options });
 }

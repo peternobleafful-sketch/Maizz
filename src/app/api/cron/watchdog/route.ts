@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const denied = await openAdminRoute(req, process.env, "cron.watchdog", undefined, {
     tokenEnv: "CRON_SECRET",
-    failedAction: "cron.auth_failed",
+    failedAction: "watchdog.auth_failed",
   });
   if (denied) return denied;
   try {

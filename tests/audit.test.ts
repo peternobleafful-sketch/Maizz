@@ -105,7 +105,7 @@ describe("admin gate: tokens", () => {
 });
 
 describe("admin gate: attempt limits", () => {
-  it("locks one source after repeated wrong tokens, even for the right token", async () => {
+  it("locks one source after repeated wrong tokens, but the right token still goes through", async () => {
     const audit = new FakeAudit();
     for (let i = 0; i < ADMIN_LIMITS.perSource; i++) {
       expect((await gate(audit, req({ token: "wrong" })))!.status).toBe(401);
@@ -113,9 +113,11 @@ describe("admin gate: attempt limits", () => {
     const locked = await gate(audit, req({ token: "wrong" }));
     expect(locked!.status).toBe(429);
     expect(locked!.headers.get("retry-after")).toBe("900");
-    expect((await gate(audit, req({ token: TOKEN })))!.status).toBe(429);
-    // A locked attempt is not recorded as another failure, and no action ran.
-    expect(audit.actions().filter((a) => a === "admin.setup_check")).toHaveLength(0);
+    // A locked wrong attempt is not recorded as another failure.
+    expect(audit.actions().filter((a) => a === "admin.auth_failed")).toHaveLength(ADMIN_LIMITS.perSource);
+    // The right secret always goes through, and is audited.
+    expect(await gate(audit, req({ token: TOKEN }))).toBeNull();
+    expect(audit.actions().filter((a) => a === "admin.setup_check")).toHaveLength(1);
   });
 
   it("does not lock out a different source for one source's mistakes", async () => {
@@ -125,28 +127,32 @@ describe("admin gate: attempt limits", () => {
     expect(await gate(audit, req({ token: TOKEN, ip: "198.51.100.2" }))).toBeNull();
   });
 
-  it("locks everyone after too many wrong tokens from many sources", async () => {
+  it("never blocks anyone for a flood of wrong tokens from many sources, and sends one alert", async () => {
     const audit = new FakeAudit();
-    for (let i = 0; i < ADMIN_LIMITS.global; i++) {
-      await gate(audit, req({ token: "wrong", ip: `198.51.100.${i + 10}` }));
+    let spikes = 0;
+    const g = (r: Request) => adminGate({ req: r, env: ENV, audit, action: "admin.setup_check", onSpike: async () => void spikes++ });
+    for (let i = 0; i < 25; i++) {
+      expect((await g(req({ token: "wrong", ip: `198.51.100.${i + 10}` })))!.status).toBe(401);
     }
-    expect((await gate(audit, req({ token: TOKEN, ip: "192.0.2.77" })))!.status).toBe(429);
+    expect(spikes).toBeGreaterThan(0);
+    expect(await g(req({ token: TOKEN, ip: "192.0.2.77" }))).toBeNull();
   });
 
-  it("unlocks once the window has passed", async () => {
+  it("keeps a wrong source locked until the window has passed", async () => {
     const audit = new FakeAudit();
     for (let i = 0; i < ADMIN_LIMITS.perSource; i++) await gate(audit, req({ token: "wrong" }));
-    expect((await gate(audit, req({ token: TOKEN })))!.status).toBe(429);
+    expect((await gate(audit, req({ token: "wrong" })))!.status).toBe(429);
     audit.shift(ADMIN_LIMITS.windowMinutes + 1);
-    expect(await gate(audit, req({ token: TOKEN }))).toBeNull();
+    expect((await gate(audit, req({ token: "wrong" })))!.status).toBe(401);
   });
 });
 
 describe("admin gate: fails closed", () => {
-  it("refuses with 503 when the audit log cannot be read", async () => {
+  it("refuses a wrong secret with 503 when the audit log cannot be read, but the right secret still works while it can be written", async () => {
     const audit = new FakeAudit();
     audit.failReads = true;
-    const res = await gate(audit, req({ token: TOKEN }));
+    expect(await gate(audit, req({ token: TOKEN }))).toBeNull();
+    const res = await gate(audit, req({ token: "wrong" }));
     expect(res!.status).toBe(503);
     expect(((await res!.json()) as { error: string }).error).toBe("audit_unavailable");
   });
@@ -238,7 +244,19 @@ describe("daily check gate (CRON_SECRET)", () => {
   it("locks after repeated wrong secrets, counted apart from the admin tools", async () => {
     const audit = new FakeAudit();
     for (let i = 0; i < ADMIN_LIMITS.perSource; i++) await cronGate(audit, req({ token: "wrong" }));
-    expect((await cronGate(audit, req({ token: CRON })))!.status).toBe(429);
+    expect((await cronGate(audit, req({ token: "wrong" })))!.status).toBe(429);
+    expect(await cronGate(audit, req({ token: CRON }))).toBeNull();
     expect(await gate(audit, req({ token: TOKEN }))).toBeNull();
+  });
+
+  it("gives the watchdog its own failure counter, apart from the daily check", async () => {
+    const audit = new FakeAudit();
+    const watchdog = (r: Request) =>
+      adminGate({ req: r, env, audit, action: "cron.watchdog", tokenEnv: "CRON_SECRET", failedAction: "watchdog.auth_failed" });
+    for (let i = 0; i < ADMIN_LIMITS.perSource; i++) await cronGate(audit, req({ token: "wrong" }));
+    expect((await cronGate(audit, req({ token: "wrong" })))!.status).toBe(429);
+    // Wrong tries at the daily check do not lock the watchdog's wrong-secret counter.
+    expect((await watchdog(req({ token: "wrong" })))!.status).toBe(401);
+    expect(audit.actions()).toContain("watchdog.auth_failed");
   });
 });
