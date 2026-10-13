@@ -145,22 +145,22 @@ export async function processWebhook(args: {
 
     // refund_processed
     const refunded = event.amountPesewas ?? 0;
-    if (refunded <= 0 || refunded > gift.totalPesewas) {
-      logError("webhook.refund_amount_invalid", { giftId: gift.id, refunded, total: gift.totalPesewas });
+    if (refunded <= 0 || refunded > gift.amountPesewas) {
+      logError("webhook.refund_amount_invalid", { giftId: gift.id, refunded, gift: gift.amountPesewas });
       await note({
         action: "webhook.refund_invalid",
         outcome: "denied",
         target: gift.reference,
-        detail: { provider: provider.name, refunded_pesewas: refunded, total_pesewas: gift.totalPesewas },
+        detail: { provider: provider.name, refunded_pesewas: refunded, gift_pesewas: gift.amountPesewas },
       });
       await notify.alert("refund_invalid", "A refund notice was refused", [
         `Gift reference: ${gift.reference}`,
-        "A refund notice had an amount that does not fit the gift. It was not recorded. Check it in the Paystack dashboard.",
+        "A refund notice had an amount that does not fit the gift. Fees are not refunded, so a refund can never be more than the gift amount. It was not recorded. Check it in the Paystack dashboard.",
       ]);
       return { status: 200, body: { ok: true, result: "refund_amount_invalid_not_recorded" } };
     }
     const now = await ledger.currentStatus(gift.reference);
-    if (!now?.wasPaid || now.refundedPesewas + refunded > gift.totalPesewas) {
+    if (!now?.wasPaid || now.refundedPesewas + refunded > gift.amountPesewas) {
       logError("webhook.refund_not_allowed", { giftId: gift.id, refunded, alreadyRefunded: now?.refundedPesewas ?? 0 });
       await note({
         action: "webhook.refund_invalid",
@@ -170,7 +170,7 @@ export async function processWebhook(args: {
           provider: provider.name,
           refunded_pesewas: refunded,
           already_refunded_pesewas: now?.refundedPesewas ?? 0,
-          total_pesewas: gift.totalPesewas,
+          gift_pesewas: gift.amountPesewas,
           was_paid: now?.wasPaid ?? false,
         },
       });

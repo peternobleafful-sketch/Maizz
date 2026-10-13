@@ -40,6 +40,7 @@ export function receiptText(r: {
     `Reference:  ${r.reference}`,
     "",
     `${r.churchName} receives the full ${formatCedis(r.amountPesewas)}.`,
+    "Fees are non-refundable. If a gift is ever refunded, the giver gets back the gift amount only.",
     "",
     "Keep this email as your record. Maizz never sees your mobile money PIN.",
   ].join("\n");

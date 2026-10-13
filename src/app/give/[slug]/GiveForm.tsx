@@ -302,7 +302,7 @@ export default function GiveForm(props: {
                   <p className="give-row"><span>Gift</span><span>{formatCedis(fees.giftPesewas)}</span></p>
                   <p className="give-row"><span>Fees</span><span>{formatCedis(fees.feePesewas)}</span></p>
                   <p className="give-row big"><span>Total</span><span>{formatCedis(fees.totalPesewas)}</span></p>
-                  <small>{props.churchName} receives the full {formatCedis(fees.giftPesewas)}.</small>
+                  <small>{props.churchName} receives the full {formatCedis(fees.giftPesewas)}. Fees are non-refundable; a refund returns the gift amount only.</small>
                 </div>
               )}
 
@@ -375,6 +375,7 @@ export default function GiveForm(props: {
                   <p className="give-row"><span>Gift</span><span>{formatCedis(fees.giftPesewas)}</span></p>
                   <p className="give-row"><span>Fees</span><span>{formatCedis(fees.feePesewas)}</span></p>
                   <p className="give-row big"><span>Total</span><span>{formatCedis(fees.totalPesewas)}</span></p>
+                  <small>Fees are non-refundable; a refund returns the gift amount only.</small>
                 </div>
               )}
               <p className="give-refbox"><span>Reference</span><span>{reference}</span></p>

@@ -101,7 +101,7 @@ export default function SetupCheckClient() {
   }
 
   async function refundGift() {
-    if (!window.confirm("Refund this test gift in full? (test mode, no real money)")) return;
+    if (!window.confirm("Refund the gift amount of this test gift? Fees are not refunded. (test mode, no real money)")) return;
     setBusy(true);
     setTestOutput("");
     try {

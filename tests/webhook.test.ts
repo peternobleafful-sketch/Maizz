@@ -167,10 +167,17 @@ describe("refund limits", () => {
     expect(audit.actions()).toContain("webhook.refund_invalid");
   });
 
-  it("allows several part refunds up to the total paid, and no more", async () => {
+  it("refuses a refund that would give back the fee (fees are non-refundable)", async () => {
+    await send(success());
+    const res = await refund(74, 10_150);
+    expect(res.body.result).toBe("refund_amount_invalid_not_recorded");
+    expect(ledger.events.filter((e) => e.status === "refunded")).toHaveLength(0);
+  });
+
+  it("allows several part refunds up to the gift amount, and no more", async () => {
     await send(success());
     expect((await refund(71, 6_000)).body.result).toBe("added");
-    expect((await refund(72, 4_150)).body.result).toBe("added");
+    expect((await refund(72, 4_000)).body.result).toBe("added");
     const over = await refund(73, 1);
     expect(over.body.result).toBe("refund_amount_invalid_not_recorded");
     expect(ledger.events.filter((e) => e.status === "refunded")).toHaveLength(2);

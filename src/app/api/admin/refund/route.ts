@@ -7,7 +7,7 @@ import { getLedger, getPaymentProvider } from "@/lib/payments";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Private tool, test mode only: refunds a paid TEST gift (all of what is left, or an amount in pesewas).
+// Private tool, test mode only: refunds a paid TEST gift (the gift amount only, never the fees; all of what is left, or an amount in pesewas).
 // The refund is recorded in the ledger when the payment provider's refund notice arrives, not here.
 export async function POST(req: Request) {
   let input: unknown;
@@ -34,7 +34,8 @@ export async function POST(req: Request) {
     if (!gift || !now) return Response.json({ error: "No such test gift." }, { status: 404 });
     if (!now.wasPaid) return Response.json({ error: "That gift was never paid, so there is nothing to refund." }, { status: 400 });
 
-    const left = gift.totalPesewas - now.refundedPesewas;
+    // Fees are never refunded: the most that can go back is the gift amount.
+    const left = gift.amountPesewas - now.refundedPesewas;
     if (left <= 0) return Response.json({ error: "That gift is already fully refunded." }, { status: 400 });
     let amount = left;
     if (body.amountPesewas !== undefined) {
