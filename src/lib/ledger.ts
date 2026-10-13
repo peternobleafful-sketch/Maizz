@@ -108,6 +108,8 @@ export interface Ledger {
   listUnsettled(opts: { olderThanMinutes: number; newerThanDays: number; limit: number }): Promise<GiftRecord[]>;
   /** Gifts marked paid in the last few days, newest first. Used to double-check the books. */
   listRecentPaid(opts: { sinceDays: number; limit: number }): Promise<GiftRecord[]>;
+  /** True if the database holds any test gift (reference mz_test_...). With a live key that must never be the case. */
+  hasTestGifts(): Promise<boolean>;
 }
 
 export class LedgerError extends Error {}
@@ -228,6 +230,11 @@ export function createSupabaseLedger(opts: {
       const res = await request("POST", "churches", { slug: church.slug, name: church.name }, "return=representation");
       if (await isUniqueViolation(res)) throw new LedgerError("A church with that web address already exists");
       return toChurch((await rows(res, "church creation"))[0]);
+    },
+
+    async hasTestGifts() {
+      const res = await request("GET", "gifts?reference=like.mz_test_*&select=id&limit=1");
+      return (await rows(res, "test gift check")).length > 0;
     },
 
     async listChurches() {

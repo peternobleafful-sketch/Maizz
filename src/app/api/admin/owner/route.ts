@@ -1,5 +1,6 @@
 import { openAdminRoute } from "@/lib/adminAuth";
 import { requireSupabase } from "@/lib/config";
+import { noActiveOwnerYet } from "@/lib/ownerRuntime";
 import { StaffError } from "@/lib/staff";
 import { readJson } from "@/lib/staffRoutes";
 import { getStaffService } from "@/lib/staffRuntime";
@@ -10,13 +11,17 @@ export const dynamic = "force-dynamic";
 
 const MAX_OWNERS = 5;
 
+
 // Private tool (admin key): add a Maizz owner for the owner dashboard, resend their invite, or list the owners.
 // Owners have their own sign-in, separate from church staff.
 export async function POST(req: Request) {
   const body = (await readJson(req)) ?? {};
   const action = body.action === "invite" || body.action === "resend" || body.action === "list" ? body.action : undefined;
 
-  const denied = await openAdminRoute(req, process.env, `admin.owner_${action ?? "invalid"}`);
+  // In Production this tool works only until the first Maizz owner has set a password (first-owner set-up). After that it is off.
+  const denied = await openAdminRoute(req, process.env, `admin.owner_${action ?? "invalid"}`, undefined, {
+    allowInProductionWhen: () => noActiveOwnerYet(process.env),
+  });
   if (denied) return denied;
   if (!action) return Response.json({ error: "Choose an action." }, { status: 400 });
 

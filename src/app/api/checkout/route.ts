@@ -39,8 +39,9 @@ export async function POST(req: Request) {
       return Response.json({ error: "Too many attempts. Please wait a few minutes and try again." }, { status: 429, headers: { "Retry-After": "600" } });
     }
 
-    const testMode = classifyPaystackKey(process.env.PAYSTACK_SECRET_KEY) === "test";
-    const started = await startCheckout({ ledger: getLedger(), provider: getPaymentProvider(), input: parsed.input, testMode });
+    const keyKind = classifyPaystackKey(process.env.PAYSTACK_SECRET_KEY);
+    const testMode = keyKind === "test";
+    const started = await startCheckout({ ledger: getLedger(), provider: getPaymentProvider(), input: parsed.input, testMode, live: keyKind === "live" });
     await audit
       .record({
         actor: "giver",

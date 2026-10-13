@@ -14,7 +14,7 @@ const NO = (status: number, error: string) => Response.json({ error }, { status 
 
 // The Maizz owner accepts or declines a church's application.
 // Accepting adds the church as "pending" and emails the contact an invite to be the church's owner on the dashboard.
-// The church still cannot take gifts until you set up its payout account and activate it on the setup page.
+// The church still cannot take gifts until you set up its payout account and open it under Churches.
 export async function POST(req: Request) {
   if (!sameSite(req)) return NO(403, "Not allowed");
   const body = await readJson(req);
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     } catch (err) {
       await data.releaseApplication(app.id).catch(() => undefined);
       logError("owner.application_church_failed", { reason: err instanceof Error ? err.message : "unknown" });
-      return NO(502, "Could not add the church. The application is back in the list. Try again, or add it on the setup page.");
+      return NO(502, "Could not add the church. The application is back in the list. Try again, or add it under Churches.");
     }
 
     const baseUrl = process.env.MAIZZ_PUBLIC_URL?.trim() || new URL(req.url).origin;
@@ -73,12 +73,12 @@ export async function POST(req: Request) {
     } catch (err) {
       const why = err instanceof StaffError && err.code === "exists" ? "That email already has a Maizz sign-in." : "The invite email did not send.";
       return Response.json({
-        message: `${church.name} was added as pending. ${why} You can send the invite again from Team on the setup page.`,
+        message: `${church.name} was added as pending. ${why} You can send the invite again under Churches, Manage, People.`,
         slug: church.slug,
       });
     }
     return Response.json({
-      message: `${church.name} was added as pending and ${app.contactName} was emailed an invite. Next: set up the payout account and activate it on the setup page.`,
+      message: `${church.name} was added as pending and ${app.contactName} was emailed an invite. Next: under Churches, set up the payout account and open it.`,
       slug: church.slug,
     });
   } catch (err) {

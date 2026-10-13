@@ -13,6 +13,15 @@ export const ADMIN_LIMITS = {
 
 const MIN_TOKEN_LENGTH = 24;
 
+/**
+ * The private admin tools (the setup page and /api/admin/*) are switched off in Production: they answer 404.
+ * Set MAIZZ_ADMIN_TOOLS=on in Vercel to bring them back for a short while. Preview and local use are not affected.
+ * The daily-check addresses (/api/cron/*) are never switched off by this.
+ */
+export function adminToolsOff(env: Env): boolean {
+  return env.VERCEL_ENV === "production" && env.MAIZZ_ADMIN_TOOLS?.trim() !== "on";
+}
+
 function digest(value: string): Buffer {
   return createHash("sha256").update(value).digest();
 }
@@ -102,8 +111,24 @@ export async function openAdminRoute(
   env: Env,
   action: string,
   target?: string,
-  options: { tokenEnv?: string; failedAction?: string } = {},
+  options: {
+    tokenEnv?: string;
+    failedAction?: string;
+    /** Only for the first-owner set-up: lets the route work in Production while this returns true. */
+    allowInProductionWhen?: () => Promise<boolean>;
+  } = {},
 ): Promise<Response | null> {
+  // Cron addresses pass tokenEnv and are never switched off. Every other admin route is off in Production.
+  const { allowInProductionWhen, ...gateOptions } = options;
+  if (!options.tokenEnv && adminToolsOff(env)) {
+    let allowed = false;
+    try {
+      allowed = (await allowInProductionWhen?.()) === true;
+    } catch {
+      allowed = false;
+    }
+    if (!allowed) return new Response("Not found", { status: 404 });
+  }
   let audit: AuditLog;
   try {
     audit = getAudit(env);
@@ -124,5 +149,5 @@ export async function openAdminRoute(
       "If this keeps happening, rotate SETUP_CHECK_TOKEN and CRON_SECRET in Vercel.",
     ]);
   };
-  return adminGate({ req, env, audit, action, target, onLocked, onSpike, ...options });
+  return adminGate({ req, env, audit, action, target, onLocked, onSpike, ...gateOptions });
 }

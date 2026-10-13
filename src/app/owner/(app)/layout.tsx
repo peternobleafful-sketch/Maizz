@@ -14,6 +14,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
     { href: "/owner/churches", label: "Churches" },
     { href: "/owner/applications", label: waiting > 0 ? "Applications •" : "Applications" },
     { href: "/owner/activity", label: "Activity" },
+    { href: "/owner/system", label: "System" },
   ];
   return (
     <div className="dash">

@@ -7,7 +7,7 @@ import type { AuditLog } from "./audit";
 export const ROLES = ["owner", "finance", "viewer"] as const;
 export type Role = (typeof ROLES)[number];
 export type UserStatus = "invited" | "active" | "disabled";
-export type TokenKind = "invite" | "code" | "session" | "reset";
+export type TokenKind = "invite" | "code" | "session" | "reset" | "payout";
 export type Area = "church" | "owner";
 
 export const STAFF_LIMITS = {
@@ -18,6 +18,8 @@ export const STAFF_LIMITS = {
   resetMinutes: 60,
   /** Reset emails one source address may ask for in the window. */
   resetRequests: 5,
+  /** Fresh codes one source may ask for to confirm a payout change, in the window. */
+  stepUpRequests: 5,
   /** Wrong passwords or codes for one person before they are locked out. */
   userFailures: 5,
   lockMinutes: 15,
@@ -146,6 +148,9 @@ export type SignInResult =
 export type CodeResult =
   | { ok: true; sessionToken: string; expiresAt: number }
   | { ok: false; reason: "wrong" | "expired" | "locked" | "unavailable" };
+
+export type StepUpStart = { ok: true; challenge: string } | { ok: false; reason: "signed_out" | "locked" | "unavailable" };
+export type StepUpResult = { ok: true } | { ok: false; reason: "signed_out" | "wrong" | "expired" | "locked" | "unavailable" };
 
 export interface SessionInfo {
   user: StaffUser;
@@ -355,6 +360,87 @@ export function createStaffService(deps: {
       await store.revokeTokens(user.id, "code");
       await record("staff.password_reset", "ok", undefined, user.id);
       return { ok: true };
+    },
+
+    /**
+     * A fresh code for one sensitive action (changing a church's payout account). The person must already be signed in.
+     * The code is a separate kind, so a sign-in code can never be used for it and it works only once.
+     */
+    async startStepUp(sessionToken: string | undefined, sourceKey: string): Promise<StepUpStart> {
+      try {
+        const session = await this.getSession(sessionToken);
+        if (!session) return { ok: false, reason: "signed_out" };
+        const asked = await audit.countSince("staff.stepup_sent", STAFF_LIMITS.windowMinutes, sourceKey);
+        if (asked >= STAFF_LIMITS.stepUpRequests) return { ok: false, reason: "locked" };
+        const user = session.user;
+        await store.revokeTokens(user.id, "payout");
+        const code = newCode();
+        const challenge = await store.createToken({
+          userId: user.id,
+          kind: "payout",
+          tokenHash: h(`payout:${user.id}:${code}`),
+          expiresAt: now() + STAFF_LIMITS.codeMinutes * minute,
+        });
+        await mailer.send({
+          to: user.email,
+          subject: `Your Maizz code to change a payout account is ${code}`,
+          text: `Your Maizz confirmation code is ${code}.\n\nIt is needed to change where a church's gifts are paid out. It works once, for ${STAFF_LIMITS.codeMinutes} minutes. If you did not ask for it, do not use it and change your password.\n\nMaizz will never ask you for this code by phone or message.`,
+        });
+        await record("staff.stepup_sent", "ok", sourceKey, user.id);
+        return { ok: true, challenge };
+      } catch {
+        return { ok: false, reason: "unavailable" };
+      }
+    },
+
+    /** Checks the fresh code. It can be used once; a right code is used up here, so ask for the change in the same request. */
+    async verifyStepUp(sessionToken: string | undefined, challenge: unknown, codeRaw: unknown, sourceKey: string): Promise<StepUpResult> {
+      try {
+        const session = await this.getSession(sessionToken);
+        if (!session) return { ok: false, reason: "signed_out" };
+        const user = session.user;
+        if (await sourceLocked(sourceKey)) return { ok: false, reason: "locked" };
+        if (user.lockedUntil && user.lockedUntil > now()) return { ok: false, reason: "locked" };
+        const code = typeof codeRaw === "string" ? codeRaw.replace(/\s/g, "") : "";
+        const token = typeof challenge === "string" && /^[0-9a-f-]{36}$/.test(challenge) ? await store.getToken(challenge) : null;
+        if (!token || token.kind !== "payout" || token.userId !== user.id || token.usedAt !== null || token.expiresAt <= now()) {
+          await record("staff.code_failed", "denied", sourceKey, user.id);
+          return { ok: false, reason: "expired" };
+        }
+        if (token.attempts >= STAFF_LIMITS.codeTries) {
+          await store.consumeToken(token.id);
+          return { ok: false, reason: "expired" };
+        }
+        if (!/^\d{6}$/.test(code) || !same(token.tokenHash, h(`payout:${user.id}:${code}`))) {
+          await store.setTokenAttempts(token.id, token.attempts + 1);
+          await fail(user, "staff.code_failed", sourceKey);
+          return { ok: false, reason: "wrong" };
+        }
+        if (!(await store.consumeToken(token.id))) return { ok: false, reason: "expired" };
+        await record("staff.stepup_ok", "ok", sourceKey, user.id);
+        return { ok: true };
+      } catch {
+        return { ok: false, reason: "unavailable" };
+      }
+    },
+
+    /** After a payout change: tells every owner of that church (active or still invited) where their gifts now go. Returns how many were emailed. */
+    async tellChurchOwnersPayoutChanged(args: { churchId: string; churchName: string; bankName: string | null; last4: string | null }): Promise<number> {
+      const people = (await store.listUsers(args.churchId)).filter((u) => u.role === "owner" && u.status !== "disabled");
+      let sent = 0;
+      for (const u of people) {
+        try {
+          await mailer.send({
+            to: u.email,
+            subject: `Your ${args.churchName} payout account was changed`,
+            text: `Hello ${u.fullName},\n\nYour payout account was changed to ${args.bankName ? `${args.bankName} ` : ""}•••• ${args.last4 ?? "----"} by Maizz.\n\nIf you did not expect this, reply to this email or contact Maizz straight away.`,
+          });
+          sent += 1;
+        } catch {
+          // One failed email must not stop the others.
+        }
+      }
+      return sent;
     },
 
     async getSession(sessionToken: string | undefined): Promise<SessionInfo | null> {

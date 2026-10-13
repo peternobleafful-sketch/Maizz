@@ -44,7 +44,7 @@ The database design lives in `supabase/migrations/0001_ledger.sql`.
 - `src/lib/payments/webhookHandler.ts` and `src/app/api/webhooks/paystack/route.ts`: receive Paystack's notices. A notice is refused unless its signature matches. A payment is only recorded as paid if the amount and currency match the gift exactly. A repeated notice is recorded once.
 - `src/lib/config.ts`: refuses a live Paystack key unless `MAIZZ_ALLOW_LIVE=yes` (do not set it before the legal checks are done).
 - `src/lib/ledger.ts`: the only code that writes to the ledger.
-- `/setup-check`: private page that tests each setting without showing any value. Needs `SETUP_CHECK_TOKEN`. Also starts a GH₵1 test payment and checks the result.
+- `/setup-check`: private page that tests each setting without showing any value. Needs `SETUP_CHECK_TOKEN`. Also starts a GH₵1 test payment and checks the result. **Switched off (404) in Production** since 13 Oct 2026: the owner dashboard (Churches, System) does the same jobs behind the owner sign-in. Set `MAIZZ_ADMIN_TOOLS=on` in Vercel to bring it back for a short while. Until the first owner has set a password it shows only "Add the first Maizz owner".
 - Failed-payment detection, refunds, late or out-of-order notices and daily reconciliation come in step 6.
 - Paystack's exact test-mode behaviour for Ghana mobile money (and the refund notice fields) is to be confirmed against a real test run.
 
@@ -97,15 +97,26 @@ Signed-in church people see: Overview (last 7 days, this month, all time, by gif
 - **Alerts:** set `ALERT_EMAIL` (plus the email settings). Odd events email the owner at most once an hour per kind. A second cron, `/api/cron/watchdog` at 08:00, emails if the daily check did not run.
 - **Receipts:** an optional email box on the giving page (named gifts only). Receipts go out once, when the gift is first recorded as paid.
 - **Password reset:** `/church/forgot` and `/church/reset`. Needs migration `0007_password_reset.sql`.
-- **Books copy:** setup page, "Download the books" (CSV, no personal data).
+- **Books copy:** owner dashboard, System, "Download the books" (CSV, no personal data).
 - **Incident plan:** `docs/INCIDENT_RESPONSE.md`.
 
 ## Owner dashboard, church sign-up and pause giving (10 Oct 2026)
 
-Needs migration `0008_owner_signup_pause.sql`. The setup page shows "Owner dashboard tables are installed" once it is run.
+Needs migration `0008_owner_signup_pause.sql`. The System page shows "Owner dashboard tables are installed" once it is run.
 
-- **Owner dashboard** at `/owner` (own sign-in at `/owner/sign-in`, own people, own sessions and its own cookie, so a church sign-in can never open it). It shows totals across all churches, Maizz's own fee share, failed or waiting gifts, whether the daily check ran, every church, applications and recent alerts. Add the first owner from the setup page ("Maizz owners", at most 5). Payouts, opening and suspending a church stay on the setup page, behind the admin key.
+- **Owner dashboard** at `/owner` (own sign-in at `/owner/sign-in`, own people, own sessions and its own cookie, so a church sign-in can never open it). It shows totals across all churches, Maizz's own fee share, failed or waiting gifts, whether the daily check ran, every church, applications and recent alerts. Add the first owner from the setup page ("Maizz owners", at most 5; in Production only until the first owner has a password). Payouts, opening and suspending a church are now under Churches in the dashboard (see the group A notes below).
 - **Church sign-up** at `/register`. It only saves an application (name, town, contact name, email, phone). Limits: 3 per connection per day, 100 waiting at once, a hidden box for robots. You get an alert email. Accepting an application in the owner dashboard adds the church as "pending" and emails the contact an invite as the church's owner. You still set up the payout account and open the church on the setup page.
 - **Pause giving**: a church owner can pause and resume their own page from Settings. A paused page shows a short message and refuses gifts; gifts already in progress still finish. This is separate from Maizz suspending a church, which a church cannot undo.
 - **Payout history** on the church Payouts page, read from the payment provider's settlements for that church's account. It could not be tested against the live provider, so it fails safely with a plain message.
 - **Home page** has a menu (How it works, Fees, Security, Church sign-in, Register your church).
+
+## Security review, group A (13 Oct 2026)
+
+Needs migration `0009_owner_payout_code.sql` (run it in Supabase before the code goes live).
+
+- **Church tools in the owner dashboard** (`/owner/churches`): add a church, set its payout account, open or suspend it, see its people and send an invite again. Changing a payout account needs a fresh six-digit code emailed to the signed-in owner (works once, 10 minutes), and the church's owners are emailed afterwards ("Your payout account was changed to •••• 1234 by Maizz").
+- **System page** (`/owner/system`): the setup checks, "Run the daily check now" and "Download the books".
+- **Admin tools off in Production:** `/setup-check` and `/api/admin/*` answer 404 unless `MAIZZ_ADMIN_TOOLS=on`. The nightly check addresses are not affected.
+- **Lock-out fix:** the right admin or cron secret always works; wrong ones lock only the sender; the watchdog has its own counter.
+- **Live key guard:** with a live key, checkout refuses while any test gift exists. See `docs/LIVE_DATABASE.md`.
+- **Refund rule:** a refund returns the gift amount only. Fees are not refunded (Maizz mistakes are decided case by case). Refunds stay test-only until Paystack answers in writing.

@@ -62,7 +62,7 @@ export default async function OwnerOverview() {
           </dl>
           <p className="dash-muted">
             {trouble === 0 ? "Nothing is stuck." : "Failed gifts are usually a giver who did not approve. Waiting gifts are settled by the daily check."}{" "}
-            Refunds and manual checks are on the <Link href="/setup-check">setup page</Link>.
+            The daily check and the checks of your settings are on the <Link href="/owner/system">System page</Link>.
           </p>
         </section>
       </div>

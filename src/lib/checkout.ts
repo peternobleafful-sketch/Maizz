@@ -21,6 +21,13 @@ export class CheckoutError extends Error {
   }
 }
 
+/** A live key is in use but the database still holds test gifts. Nothing is started until that is sorted. */
+export class LiveGuardError extends Error {
+  constructor() {
+    super("A live key is in use but the database holds test gifts. Use a separate live database (docs/LIVE_DATABASE.md).");
+  }
+}
+
 export const MIN_GIFT_PESEWAS = 100; // GH₵1.00
 export const MAX_GIFT_PESEWAS = 5_000_000; // GH₵50,000.00 until large-gift review exists
 
@@ -128,8 +135,11 @@ export async function startCheckout(args: {
   provider: PaymentProvider;
   input: CheckoutInput;
   testMode: boolean;
+  /** True when the Paystack key is a live one. Then no gift starts while the database holds any test gift. */
+  live?: boolean;
 }): Promise<CheckoutStarted> {
   const { ledger, provider, input, testMode } = args;
+  if (args.live && (await ledger.hasTestGifts())) throw new LiveGuardError();
   const church = await ledger.findChurch(input.churchSlug);
   const unavailable = new CheckoutError("church_unavailable", "This church cannot receive gifts right now.");
   if (!church || church.status !== "active" || church.paused) throw unavailable;

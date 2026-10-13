@@ -19,7 +19,7 @@ describe("setup check", () => {
   it("passes everything when settings are right", async () => {
     const m = mockFetch(all200);
     const r = byId(await runSetupChecks(GOOD_ENV, m.fn));
-    for (const id of ["paystack_key", "paystack_reach", "supabase_url", "supabase_key", "ledger", "locked", "church_accounts", "church_staff", "owner_dashboard", "reconcile", "guard"]) {
+    for (const id of ["paystack_key", "paystack_reach", "supabase_url", "supabase_key", "ledger", "locked", "church_accounts", "church_staff", "owner_dashboard", "reconcile", "live_test_data", "guard"]) {
       expect(r[id]!.ok, `${id}: ${r[id]!.hint}`).toBe(true);
     }
   });
@@ -143,5 +143,32 @@ describe("setup check: church sign-in", () => {
     expect(set.staff_secret!.ok).toBe(true);
     expect(set.email!.ok).toBe(true);
     expect(JSON.stringify(set)).not.toContain("re_abc");
+  });
+});
+
+describe("setup check: live key and test gifts", () => {
+  const LIVE = { ...GOOD_ENV, PAYSTACK_SECRET_KEY: "sk_live_abc", MAIZZ_ALLOW_LIVE: "yes" };
+  // Live key: Paystack is not asked, so the Supabase checks come first, then the test-gift question last.
+  const liveReplies = (testGifts: unknown[]) => [...Array.from({ length: 7 }, () => ok), { status: 401, json: {} }, ok, ok, ok, { json: [{ id: 1 }] }, { json: testGifts }];
+
+  it("fails when the key is live and the database holds a test gift", async () => {
+    const r = byId(await runSetupChecks(LIVE, mockFetch(liveReplies([{ id: "g1" }])).fn));
+    expect(r.live_test_data!.ok).toBe(false);
+    expect(r.live_test_data!.hint).toMatch(/test gifts/);
+  });
+
+  it("passes when the key is live and there are no test gifts", async () => {
+    const r = byId(await runSetupChecks(LIVE, mockFetch(liveReplies([])).fn));
+    expect(r.live_test_data!.ok).toBe(true);
+  });
+
+  it("does not pass by luck when it could not look", async () => {
+    const r = byId(await runSetupChecks(LIVE, mockFetch(liveReplies([]).slice(0, -1)).fn));
+    expect(r.live_test_data!.ok).toBe(false);
+  });
+
+  it("is fine with a test key", async () => {
+    const r = byId(await runSetupChecks(GOOD_ENV, mockFetch(all200).fn));
+    expect(r.live_test_data!.ok).toBe(true);
   });
 });

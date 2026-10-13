@@ -207,7 +207,32 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
           ? "It has not run yet. It runs by itself at 03:00 once CRON_SECRET is set in Vercel. You can also press Run daily check now below."
           : "Could not read the audit log just now. Try again in a minute.",
     );
+
+    // A live key must never share a database with test gifts (they would count as real money on dashboards and in downloads).
+    if (kind === "live") {
+      let found: boolean | null = null;
+      try {
+        const res = await fetchFn(`${rawUrl}/rest/v1/gifts?reference=like.mz_test_*&select=id&limit=1`, { headers, signal: AbortSignal.timeout(10_000) });
+        const body: unknown = res.ok ? await res.json() : null;
+        found = Array.isArray(body) ? body.length > 0 : null;
+      } catch {
+        found = null;
+      }
+      add(
+        "live_test_data",
+        "Live key with test gifts in the database",
+        found === false,
+        found === false
+          ? "No test gifts in this database. Good."
+          : found === true
+            ? "FAIL: this database holds test gifts but the key is a live one. Use a separate, empty live database (docs/LIVE_DATABASE.md). Checkout refuses to start until then."
+            : "Could not check just now. Try again in a minute.",
+      );
+    } else {
+      add("live_test_data", "Live key with test gifts in the database", true, "Not a live key, so test gifts here are expected. This check matters once a live key is used.");
+    }
   } else {
+    add("live_test_data", "Live key with test gifts in the database", kind !== "live", kind === "live" ? "Fix the Supabase settings above first." : "Not a live key, so test gifts here are expected.");
     add("ledger", "Ledger and audit log are installed and reachable", false, "Fix the Supabase settings above first.");
     add("locked", "Ledger refuses requests with no key", false, "Fix the Supabase settings above first.");
     add("church_accounts", "Church accounts are installed", false, "Fix the Supabase settings above first.");

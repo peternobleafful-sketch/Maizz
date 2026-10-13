@@ -210,3 +210,16 @@ describe("supabase ledger: church accounts", () => {
     expect((calls[0]!.body as Record<string, unknown>).maizz_fee_pesewas).toBe(100);
   });
 });
+
+describe("supabase ledger: test gifts", () => {
+  it("asks for any gift whose reference starts mz_test_, and says yes or no", async () => {
+    const yes = ledger([{ json: [{ id: "g1" }] }]);
+    expect(await yes.l.hasTestGifts()).toBe(true);
+    expect(yes.calls[0]!.url).toContain("gifts?reference=like.mz_test_*&select=id&limit=1");
+    expect(await ledger([{ json: [] }]).l.hasTestGifts()).toBe(false);
+  });
+
+  it("fails loudly rather than saying no when the database does not answer", async () => {
+    await expect(ledger([{ status: 500, json: {} }]).l.hasTestGifts()).rejects.toThrow(LedgerError);
+  });
+});

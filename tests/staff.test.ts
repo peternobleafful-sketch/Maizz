@@ -11,54 +11,7 @@ import {
   type StaffUser,
   type TokenKind,
 } from "../src/lib/staff";
-import { FakeAudit } from "./helpers";
-
-class FakeStaffStore implements StaffStore {
-  users: StaffUser[] = [];
-  tokens: StaffToken[] = [];
-  n = 0;
-  async findUserByEmail(email: string) {
-    return this.users.find((u) => u.email === email) ?? null;
-  }
-  async getUser(id: string) {
-    return this.users.find((u) => u.id === id) ?? null;
-  }
-  async listUsers(churchId: string) {
-    return this.users.filter((u) => u.churchId === churchId);
-  }
-  async createUser(u: { churchId: string; email: string; fullName: string; role: StaffUser["role"] }) {
-    if (this.users.some((x) => x.email === u.email)) throw new StaffError("exists", "exists");
-    const user: StaffUser = { id: `00000000-0000-0000-0000-${String(++this.n).padStart(12, "0")}`, ...u, status: "invited", passwordHash: null, failedAttempts: 0, lockedUntil: null };
-    this.users.push(user);
-    return user;
-  }
-  async updateUser(id: string, patch: Parameters<StaffStore["updateUser"]>[1]) {
-    Object.assign(this.users.find((u) => u.id === id)!, patch);
-  }
-  async createToken(t: { userId: string; kind: TokenKind; tokenHash: string; expiresAt: number }) {
-    const token: StaffToken = { id: `10000000-0000-0000-0000-${String(++this.n).padStart(12, "0")}`, ...t, attempts: 0, usedAt: null };
-    this.tokens.push(token);
-    return token.id;
-  }
-  async findTokenByHash(kind: TokenKind, tokenHash: string) {
-    return this.tokens.find((t) => t.kind === kind && t.tokenHash === tokenHash) ?? null;
-  }
-  async getToken(id: string) {
-    return this.tokens.find((t) => t.id === id) ?? null;
-  }
-  async consumeToken(id: string) {
-    const t = this.tokens.find((x) => x.id === id)!;
-    if (t.usedAt !== null) return false;
-    t.usedAt = 1;
-    return true;
-  }
-  async setTokenAttempts(id: string, attempts: number) {
-    this.tokens.find((x) => x.id === id)!.attempts = attempts;
-  }
-  async revokeTokens(userId: string, kind: TokenKind) {
-    for (const t of this.tokens) if (t.userId === userId && t.kind === kind && t.usedAt === null) t.usedAt = 1;
-  }
-}
+import { FakeAudit, FakeStaffStore } from "./helpers";
 
 const PEPPER = "p".repeat(40);
 const PASSWORD = "correct horse battery";

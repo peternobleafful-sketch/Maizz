@@ -13,7 +13,7 @@ beforeAll(async () => {
   db = new PGlite();
   for (const f of [
     "0001_ledger.sql", "0002_audit.sql", "0003_gift_types.sql", "0004_status_rules.sql",
-    "0005_church_accounts.sql", "0006_church_staff.sql", "0007_password_reset.sql", "0008_owner_signup_pause.sql",
+    "0005_church_accounts.sql", "0006_church_staff.sql", "0007_password_reset.sql", "0008_owner_signup_pause.sql", "0009_owner_payout_code.sql",
   ]) {
     await db.exec(read(f));
   }
@@ -66,6 +66,8 @@ describe("0008 owner sign-in", () => {
     await ins("reset", "h3");
     await ins("code", "h4");
     await ins("code", "h4"); // codes are looked up by id, so two may share a hash
+    await ins("payout", "h5"); // the fresh code for a payout change (0009)
+    await ins("payout", "h5");
     await db.query("delete from owner_users where id = $1", [id]);
     const left = await db.query("select 1 from owner_tokens where user_id = $1", [id]);
     expect(left.rows).toHaveLength(0);

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CheckoutError, giverStatus, parseCheckout, REFERENCE_PATTERN, startCheckout, toGiverStep } from "../src/lib/checkout";
+import { CheckoutError, giverStatus, LiveGuardError, parseCheckout, REFERENCE_PATTERN, startCheckout, toGiverStep } from "../src/lib/checkout";
 import { createPaystackProvider } from "../src/lib/payments/paystack";
 import { FakeLedger, makeChurch, mockFetch } from "./helpers";
 
@@ -196,5 +196,40 @@ describe("giver status", () => {
     for (const bad of ["", "mz_abc", "mz_" + "g".repeat(24), "x" + "mz_" + "a".repeat(24), "mz_" + "a".repeat(24) + "\n&x=1"]) {
       expect(REFERENCE_PATTERN.test(bad), bad).toBe(false);
     }
+  });
+});
+
+describe("startCheckout: live key and test gifts", () => {
+  const input = () => {
+    const parsed = parseCheckout(good);
+    if (!parsed.ok) throw new Error(parsed.error);
+    return parsed.input;
+  };
+  const provider = (fn: typeof fetch) => createPaystackProvider({ secretKey: "sk_test_abc", fetchFn: fn });
+
+  it("refuses to start a gift with a live key while any test gift is in the database, and creates nothing", async () => {
+    const ledger = new FakeLedger();
+    ledger.churches.set("maizz-test-church", makeChurch({ id: "c1", slug: "maizz-test-church", name: "T", subaccountCode: "ACCT_x" }));
+    ledger.gifts.push({ id: "g0", reference: "mz_test_" + "a".repeat(24), churchId: "c1", amountPesewas: 100, feePesewas: 3, totalPesewas: 103, giftType: "tithe" } as never);
+    const m = mockFetch([]);
+    await expect(startCheckout({ ledger, provider: provider(m.fn), input: input(), testMode: false, live: true })).rejects.toBeInstanceOf(LiveGuardError);
+    expect(m.calls).toHaveLength(0);
+    expect(ledger.gifts).toHaveLength(1);
+  });
+
+  it("starts a gift with a live key when the database holds no test gift", async () => {
+    const ledger = new FakeLedger();
+    ledger.churches.set("maizz-test-church", makeChurch({ id: "c1", slug: "maizz-test-church", name: "T", subaccountCode: "ACCT_x" }));
+    const m = mockFetch([{ json: { status: true, data: { status: "pay_offline", display_text: "Approve" } } }]);
+    const out = await startCheckout({ ledger, provider: provider(m.fn), input: input(), testMode: false, live: true });
+    expect(out.reference.startsWith("mz_test_")).toBe(false);
+  });
+
+  it("does not look for test gifts when the key is a test key", async () => {
+    const ledger = new FakeLedger();
+    ledger.churches.set("maizz-test-church", makeChurch({ id: "c1", slug: "maizz-test-church", name: "T" }));
+    ledger.gifts.push({ id: "g0", reference: "mz_test_" + "a".repeat(24), churchId: "c1", amountPesewas: 100, feePesewas: 3, totalPesewas: 103, giftType: "tithe" } as never);
+    const m = mockFetch([{ json: { status: true, data: { status: "pay_offline", display_text: "Approve" } } }]);
+    await expect(startCheckout({ ledger, provider: provider(m.fn), input: input(), testMode: true })).resolves.toBeDefined();
   });
 });

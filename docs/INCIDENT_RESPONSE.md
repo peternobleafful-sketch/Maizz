@@ -26,7 +26,7 @@ When unsure, treat it as an incident. A false alarm costs little.
 1. **Write down the time** and what you saw. Do not delete anything.
 2. **Pause giving if money or data may be at risk.** Fastest ways, in this order:
    - Vercel: Settings, Environment Variables, delete `PAYSTACK_SECRET_KEY` for Production, then Redeploy. Giving stops (the page cannot start payments).
-   - Or suspend a single church from the setup page (Churches, Suspend church). A church's own owner can also pause their page from Settings, but a pause is not a security tool: only a suspension cannot be undone by the church.
+   - Or suspend a single church from the owner dashboard (Churches, Manage, Suspend church). A church's own owner can also pause their page from Settings, but a pause is not a security tool: only a suspension cannot be undone by the church.
    - If someone may have got into the owner dashboard, ask Maizz owners to change their passwords (/owner/forgot). A new password signs that person out everywhere. Check the audit log for `staff.signin` by an `owner:` actor.
 3. **If a key may have leaked, rotate it now** (see below).
 4. **Tell the developer or reviewer** and keep a written log of every step you take.
@@ -45,20 +45,20 @@ Do each in the service's own dashboard, then paste the new value into Vercel (Se
 
 ## Money problems
 
-1. Run **Run daily check now** on the setup page. It asks Paystack about every waiting gift and re-checks recent paid gifts.
-2. Compare the Maizz books with the Paystack dashboard. Use **Download the books** on the setup page for a copy.
-3. Never edit the ledger. It is append-only on purpose. A wrong gift is fixed by a refund through the setup page (test mode) or in the Paystack dashboard, which then arrives as a refund notice.
+1. Run **Run the daily check now** on the owner dashboard (System). It asks Paystack about every waiting gift and re-checks recent paid gifts.
+2. Compare the Maizz books with the Paystack dashboard. Use **Download the books** on the owner dashboard (System) for a copy.
+3. Never edit the ledger. It is append-only on purpose. A wrong gift is fixed by a refund (test mode only, through the admin tool outside Production) or in the Paystack dashboard, which then arrives as a refund notice.
 4. Tell the affected churches what happened, in plain words, before they find out themselves.
 
 ## Data problems (names, phone numbers, emails)
 
-1. Work out which churches and which givers may be affected. The audit log (setup page) shows sign-ins, exports and changes. It never holds names, phone numbers or emails.
+1. Work out which churches and which givers may be affected. The audit log (owner dashboard, Activity) shows sign-ins, exports and changes. It never holds names, phone numbers or emails.
 2. Remove access: rotate keys, remove the people who may have been involved (church dashboard, Team, Remove access, which signs them out at once).
 3. **Tell the Data Protection Commission and the affected people** as the law requires, within the time the law allows. **TO FILL IN after legal advice: exact deadline and how to report.**
 
 ## Backups and restore
 
-- Today: Supabase Free has **no automatic backups**. Until paid backups are on, download the books from the setup page at least weekly and keep the file somewhere safe.
+- Today: Supabase Free has **no automatic backups**. Until paid backups are on, download the books from the owner dashboard (System) at least weekly and keep the file somewhere safe.
 - Before the first real church: upgrade Supabase to Pro (daily backups kept for 7 days), then do one **test restore** into a separate project and check the gift counts match. Write the date of the test below.
 - Last test restore: **not done yet**.
 

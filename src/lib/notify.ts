@@ -68,7 +68,7 @@ export function createNotifier(deps: {
       await mailer.send({
         to: alertTo,
         subject: `[Maizz alert] ${subject}`,
-        text: [...lines, "", "Open the setup page and check the audit log for details. This kind of alert is sent at most once an hour."].join("\n"),
+        text: [...lines, "", "Open the owner dashboard (System and Activity) and check the audit log for details. This kind of alert is sent at most once an hour."].join("\n"),
       });
       await audit.record({ actor: "alerts", action: `alert.sent.${kind}`, outcome: "ok" });
     } catch {

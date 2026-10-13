@@ -12,7 +12,7 @@ interface Check {
 }
 
 // The access token is kept in memory only. It is never saved in the browser.
-export default function SetupCheckClient() {
+export default function SetupCheckClient({ bootstrapOnly = false }: { bootstrapOnly?: boolean }) {
   const [token, setToken] = useState("");
   const [checks, setChecks] = useState<Check[] | null>(null);
   const [message, setMessage] = useState("");
@@ -170,9 +170,11 @@ export default function SetupCheckClient() {
     <main className="tool">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img className="tool-logo" src="/brand/maizz-logo-ink.png" alt="Maizz" width={1101} height={296} />
-      <h1>Setup check</h1>
+      <h1>{bootstrapOnly ? "Add the first Maizz owner" : "Setup check"}</h1>
       <p className="tool-note">
-        Private. Enter your access token to test the settings. No keys are ever shown here.
+        {bootstrapOnly
+          ? "Private. This page only shows until the first owner has chosen a password. After that, everything is in the owner dashboard."
+          : "Private. Enter your access token to test the settings. No keys are ever shown here."}
       </p>
 
       <label className="tool-label" htmlFor="token">Access token</label>
@@ -184,9 +186,12 @@ export default function SetupCheckClient() {
         value={token}
         onChange={(e) => setToken(e.target.value)}
       />
-      <button className="tool-button" onClick={runChecks} disabled={busy || token.trim().length === 0}>
-        Run checks
-      </button>
+      {!bootstrapOnly && (
+        <button className="tool-button" onClick={runChecks} disabled={busy || token.trim().length === 0}>
+          Run checks
+        </button>
+      )}
+      {bootstrapOnly && <OwnersAdmin token={token} />}
 
       {message && <p className="tool-message">{message}</p>}
 

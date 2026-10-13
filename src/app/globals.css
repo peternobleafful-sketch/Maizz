@@ -1898,3 +1898,15 @@ body {
     justify-content: flex-end;
   }
 }
+
+/* Owner church tools: the manage panel opens under its row */
+.dash-team.plain li.owner-church { flex-wrap: wrap; }
+.owner-panel {
+  flex-basis: 100%;
+  display: grid;
+  gap: 28px;
+  margin-top: 20px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.owner-panel h3 { margin: 0 0 8px; font-size: 1.05rem; }
