@@ -1910,3 +1910,18 @@ body {
   border-top: 1px solid var(--line);
 }
 .owner-panel h3 { margin: 0 0 8px; font-size: 1.05rem; }
+
+/* Shown at once when a dashboard tab is tapped, while the page loads */
+.dash-loading { display: grid; gap: 20px; padding-top: 8px; }
+.dash-loading-bar {
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--blue), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: dash-slide 1.1s ease-in-out infinite;
+}
+.dash-loading-block { height: 120px; border-radius: 18px; background: var(--mist); }
+.dash-loading-block.short { height: 72px; width: 70%; }
+@keyframes dash-slide { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+@media (prefers-reduced-motion: reduce) { .dash-loading-bar { animation: none; background: var(--blue); opacity: 0.4; } }
