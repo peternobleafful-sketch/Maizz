@@ -1,12 +1,31 @@
 import type { Metadata } from "next";
 import DashNav, { type NavItem } from "@/app/church/(app)/DashNav";
 import { initials } from "@/lib/format";
-import { requireOwnerSession } from "@/lib/ownerRuntime";
+import { ownerNeedsApp } from "@/lib/ownerRules";
+import { redirect } from "next/navigation";
+import { getOwnerSetupUser, requireOwnerSession } from "@/lib/ownerRuntime";
+import AuthenticatorCard from "./system/AuthenticatorCard";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { robots: { index: false } };
 
 export default async function OwnerLayout({ children }: { children: React.ReactNode }) {
+  const early = await getOwnerSetupUser();
+  if (!early) redirect("/owner/sign-in");
+  if (ownerNeedsApp(process.env, early)) {
+    // Live payments: nothing else opens until the authenticator app is on.
+    return (
+      <div className="dash">
+        <div className="dash-main">
+          <main className="dash-page">
+            <h1>Switch on the authenticator app</h1>
+            <p className="dash-muted">Maizz is set up for live payments, so the owner dashboard stays shut until your authenticator app is on. Set it up below, save your recovery codes, then reload this page.</p>
+            <AuthenticatorCard />
+          </main>
+        </div>
+      </div>
+    );
+  }
   const { user, data } = await requireOwnerSession();
   const waiting = (await data.listApplications().catch(() => [])).filter((a) => a.status === "new").length;
   const items: NavItem[] = [

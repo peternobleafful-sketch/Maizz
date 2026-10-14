@@ -22,9 +22,13 @@ export const STAFF_LIMITS = {
   resetRequests: 5,
   /** Fresh codes one source may ask for to confirm a payout change, in the window. */
   stepUpRequests: 5,
-  /** Wrong passwords or codes for one person, from anywhere, before they are locked out for everyone. */
-  personFailures: 20,
-  lockMinutes: 15,
+  /**
+   * Wrong passwords or codes at one person's account, from all places together, in the window, before Maizz is told.
+   * Nobody is locked out by this: only an alert is sent, because a lock that strangers can trigger would let anyone keep the owner out.
+   */
+  personGuessAlert: 20,
+  /** Wrong passwords or codes anywhere on one sign-in door, in the window, before Maizz is told. */
+  doorGuessAlert: 100,
   /** Password and code attempts from one source address in the window. */
   sourceAttempts: 30,
   /** Password and code attempts at one person's account from one source address in the window. Only that source is stopped. */
@@ -52,9 +56,6 @@ export interface StaffUser {
   role: Role;
   status: UserStatus;
   passwordHash: string | null;
-  failedAttempts: number;
-  /** ms since 1970, or null */
-  lockedUntil: number | null;
   totp?: TotpState;
 }
 
@@ -76,7 +77,7 @@ export interface StaffStore {
   createUser(u: { churchId: string; email: string; fullName: string; role: Role }): Promise<StaffUser>;
   updateUser(
     id: string,
-    patch: Partial<{ passwordHash: string; status: UserStatus; failedAttempts: number; lockedUntil: number | null }>,
+    patch: Partial<{ passwordHash: string; status: UserStatus }>,
   ): Promise<void>;
   createToken(t: { userId: string; kind: TokenKind; tokenHash: string; expiresAt: number }): Promise<string>;
   findTokenByHash(kind: TokenKind, tokenHash: string): Promise<StaffToken | null>;
@@ -85,8 +86,6 @@ export interface StaffStore {
   consumeToken(id: string): Promise<boolean>;
   /** Adds one to a code's tries and returns the new number, in one atomic step (so a burst of guesses is counted exactly). */
   incrementTokenAttempts(id: string): Promise<number>;
-  /** Adds one to a person's wrong-attempt count and returns the new number, in one atomic step. */
-  incrementFailures(userId: string): Promise<number>;
   /** Marks every unused token of this kind for this person as used. */
   revokeTokens(userId: string, kind: TokenKind): Promise<void>;
   /** Owner only. Saves the encrypted secret and/or switches the authenticator app on. */
@@ -195,6 +194,17 @@ export function createStaffService(deps: {
   alert?: (kind: string, subject: string, lines: string[]) => Promise<void>;
   /** "owner" is the Maizz owner's own sign-in. It has its own people, links and sessions. Default "church". */
   area?: Area;
+  /**
+   * Its own key for the authenticator app's secret and recovery codes (TOTP_KEY, at least 32 characters), apart from STAFF_SECRET.
+   * With it, changing STAFF_SECRET (which signs everyone out) cannot lock the owner out of the app. Without it the old key made from STAFF_SECRET is used.
+   */
+  totpKey?: string;
+  /**
+   * Owner only. True while owner sessions must have the authenticator app on (a live Paystack key).
+   * Until then getSession answers "nobody" for an owner without the app, so every owner page and tool stays shut by default;
+   * only the app set-up asks with { setup: true }.
+   */
+  appRequired?: () => boolean;
 }) {
   const { store, audit, mailer } = deps;
   const now = deps.now ?? (() => Date.now());
@@ -203,6 +213,15 @@ export function createStaffService(deps: {
   const h = (v: string) => hashToken(v, deps.pepper);
   const area: Area = deps.area ?? "church";
   const actorOf = (id: string) => `${area === "owner" ? "owner" : "staff"}:${id}`;
+  if (deps.totpKey !== undefined && deps.totpKey.length < 32) throw new StaffError("unavailable", "TOTP_KEY must be at least 32 characters.");
+  const totpKey = deps.totpKey;
+  const SEALED = "k2:";
+  /** The authenticator secret as stored: under TOTP_KEY when it is set (marked k2:), otherwise under the old key made from STAFF_SECRET. */
+  const sealSecret = (secret: string) => (totpKey ? SEALED + encryptSecret(secret, totpKey) : encryptSecret(secret, deps.pepper));
+  const openSecret = (stored: string): string | null =>
+    stored.startsWith(SEALED) ? (totpKey ? decryptSecret(stored.slice(SEALED.length), totpKey) : null) : decryptSecret(stored, deps.pepper);
+  /** Recovery codes are kept as hashes under TOTP_KEY when set. Older ones (under STAFF_SECRET) still work until renewed. */
+  const recoveryHash = (code: string) => hashRecoveryCode(code, totpKey ?? deps.pepper);
   const whoToTell = area === "owner" ? "change your password" : "tell your church owner";
   const ask = area === "owner" ? "Sign in again, or ask for a new link." : "Ask your church owner to send a new one.";
 
@@ -223,26 +242,37 @@ export function createStaffService(deps: {
     return (await audit.hit({ action, sourceKey, minutes: STAFF_LIMITS.windowMinutes })) > STAFF_LIMITS.sourceAttempts;
   }
 
-  /** Counts one attempt at this person's account from this source. True when that source has gone over its limit for this person. */
-  async function personSourceOver(user: StaffUser, sourceKey: string): Promise<boolean> {
-    const key = h(`ps:${user.id}:${sourceKey}`);
+  /**
+   * Counts one attempt at this person's account from this source. True when that source has gone over its limit for this person.
+   * Only that source is stopped; nobody else is affected. For a name that has no account the same count is kept,
+   * so a stranger cannot tell from the work done whether the account exists.
+   */
+  async function personSourceOver(personRef: string, sourceKey: string): Promise<boolean> {
+    const key = h(`ps:${personRef}:${sourceKey}`);
     return (await audit.hit({ action: "staff.attempt_person", sourceKey: key, minutes: STAFF_LIMITS.windowMinutes })) > STAFF_LIMITS.personSourceAttempts;
   }
 
-  async function fail(user: StaffUser | null, action: string, sourceKey: string): Promise<void> {
-    await record(action, "denied", sourceKey, user?.id);
-    if (!user) return;
-    const failures = await store.incrementFailures(user.id);
-    if (failures >= STAFF_LIMITS.personFailures) {
-      await store.updateUser(user.id, { lockedUntil: now() + STAFF_LIMITS.lockMinutes * minute });
+  /**
+   * Notes one wrong password or code. Nothing is locked and nothing permanent is written (counters are emptied every night).
+   * When one person, or the whole door, gets many wrong answers from many places, Maizz is told once.
+   * The same two counts are made whether or not the name has an account.
+   */
+  async function fail(personRef: string, user: StaffUser | null, sourceKey: string): Promise<void> {
+    const person = await audit.hit({ action: "staff.failed_person", sourceKey: h(`pf:${personRef}`), minutes: STAFF_LIMITS.windowMinutes });
+    const door = await audit.hit({ action: "staff.failed_door", sourceKey: `door:${area}`, minutes: STAFF_LIMITS.windowMinutes });
+    if (user && person === STAFF_LIMITS.personGuessAlert) {
+      await record("staff.guessing_spike", "denied", sourceKey, user.id);
+      await deps.alert?.(area === "owner" ? "owner_guessing" : "staff_guessing", area === "owner" ? "Someone is guessing at the Maizz owner sign-in" : "Someone is guessing at a church sign-in", [
+        `${STAFF_LIMITS.personGuessAlert} wrong passwords or codes were tried at ${area === "owner" ? "a Maizz owner" : "one person's church"} account in ${STAFF_LIMITS.windowMinutes} minutes.`,
+        "Nobody is locked out, so the right password still works. Each address is limited, and the second step (code or authenticator app) still stands in the way.",
+        "If you were not the one trying, use a long password and, for the owner, keep the authenticator app switched on. Check the audit log (staff.guessing_spike).",
+      ]);
     }
-    if (failures === STAFF_LIMITS.personFailures) {
-      await record("staff.locked", "denied", sourceKey, user.id);
-      await deps.alert?.(area === "owner" ? "owner_locked" : "staff_locked", area === "owner" ? "The Maizz owner sign-in was locked after wrong attempts" : "A church sign-in was locked after wrong attempts", [
-        area === "owner"
-          ? "A Maizz owner sign-in was locked for 15 minutes after 20 wrong passwords or codes from one or more places."
-          : "A person's church sign-in was locked for 15 minutes after 20 wrong passwords or codes from one or more places.",
-        "If they were not the one trying, someone may be guessing. Check the audit log (staff.signin_failed, staff.code_failed).",
+    if (door === STAFF_LIMITS.doorGuessAlert) {
+      await record("staff.guessing_wide", "denied", sourceKey);
+      await deps.alert?.(area === "owner" ? "owner_guessing_wide" : "staff_guessing_wide", "Many wrong sign-in attempts across the Maizz sign-in", [
+        `${STAFF_LIMITS.doorGuessAlert} wrong passwords or codes were tried at the ${area === "owner" ? "owner" : "church"} sign-in in ${STAFF_LIMITS.windowMinutes} minutes, from one or more places.`,
+        "Each address is limited to a few tries. If it keeps happening, switch on the Vercel firewall rate limit and consider the bot check.",
       ]);
     }
   }
@@ -252,14 +282,24 @@ export function createStaffService(deps: {
    * A code from the app works once; a recovery code works once. Atomic, so two simultaneous tries cannot both pass.
    */
   async function appCodeOk(user: StaffUser, codeRaw: unknown, allowRecovery: boolean): Promise<"ok" | "recovery" | "wrong"> {
-    const secret = user.totp?.secretEnc ? decryptSecret(user.totp.secretEnc, deps.pepper) : null;
+    const secret = user.totp?.secretEnc ? openSecret(user.totp.secretEnc) : null;
     if (secret) {
       const step = verifyTotp(secret, codeRaw, now(), user.totp?.lastStep ?? 0);
-      if (step !== null) return (await store.claimTotpStep(user.id, step)) ? "ok" : "wrong";
+      if (step !== null) {
+        if (!(await store.claimTotpStep(user.id, step))) return "wrong";
+        // Moves an older secret (under STAFF_SECRET) under TOTP_KEY once that is set. Not needed for the sign-in itself.
+        if (totpKey && user.totp?.secretEnc && !user.totp.secretEnc.startsWith(SEALED)) {
+          await store.setTotp(user.id, { secretEnc: sealSecret(secret) }).catch(() => undefined);
+        }
+        return "ok";
+      }
     }
     if (allowRecovery) {
       const recovery = normaliseRecoveryCode(codeRaw);
-      if (recovery && (await store.consumeRecoveryCode(user.id, hashRecoveryCode(recovery, deps.pepper)))) return "recovery";
+      if (recovery) {
+        if (await store.consumeRecoveryCode(user.id, recoveryHash(recovery))) return "recovery";
+        if (totpKey && (await store.consumeRecoveryCode(user.id, hashRecoveryCode(recovery, deps.pepper)))) return "recovery";
+      }
     }
     return "wrong";
   }
@@ -296,7 +336,7 @@ export function createStaffService(deps: {
       if (!(await store.consumeToken(found.id))) {
         return { ok: false, reason: "invalid", message: `This link has expired or was already used. ${ask}` };
       }
-      await store.updateUser(user.id, { passwordHash: await hashPassword(password), status: "active", failedAttempts: 0, lockedUntil: null });
+      await store.updateUser(user.id, { passwordHash: await hashPassword(password), status: "active" });
       await record("staff.invite_accepted", "ok", undefined, user.id);
       return { ok: true };
     },
@@ -309,17 +349,15 @@ export function createStaffService(deps: {
         const pw = typeof password === "string" && password.length <= STAFF_LIMITS.maxPassword ? password : "";
         const user = email ? await store.findUserByEmail(email) : null;
         const usable = user && user.status === "active" ? user : null;
-        const stopped = usable ? await personSourceOver(usable, sourceKey) : false;
+        // The same counting is done for a name with no account, so the work done does not give the answer away.
+        const personRef = usable ? usable.id : `none:${email ?? ""}`;
+        const stopped = await personSourceOver(personRef, sourceKey);
         const passwordOk = await verifyPassword(pw, usable?.passwordHash ?? null);
 
-        // A locked person, or a source that has tried too often at this person, gets exactly the same answer as a wrong password.
-        // That way nobody can tell from outside which emails have accounts.
-        if (usable && (stopped || (usable.lockedUntil && usable.lockedUntil > now()))) {
-          await record("staff.signin_failed", "denied", sourceKey, usable.id);
-          return { ok: false, reason: "wrong" };
-        }
-        if (!usable || !passwordOk) {
-          await fail(usable, "staff.signin_failed", sourceKey);
+        // A source that has tried too often at this person, a wrong password and an unknown email all get exactly the same answer.
+        // Only that one source is stopped. Nobody is ever locked out by other people's guesses.
+        if (!usable || stopped || !passwordOk) {
+          await fail(personRef, usable, sourceKey);
           return { ok: false, reason: "wrong" };
         }
         await store.revokeTokens(usable.id, "code");
@@ -360,14 +398,13 @@ export function createStaffService(deps: {
         const code = typeof codeRaw === "string" ? codeRaw.replace(/\s/g, "") : "";
         const token = typeof challenge === "string" && /^[0-9a-f-]{36}$/.test(challenge) ? await store.getToken(challenge) : null;
         if (!token || token.kind !== "code" || token.usedAt !== null || token.expiresAt <= now()) {
-          await record("staff.code_failed", "denied", sourceKey, token?.userId);
           return { ok: false, reason: "expired" };
         }
         const user = await store.getUser(token.userId);
         if (!user || user.status !== "active") return { ok: false, reason: "expired" };
-        // Too many tries at this person from this source, or the person is locked: answer like a wrong code.
-        if ((await personSourceOver(user, sourceKey)) || (user.lockedUntil && user.lockedUntil > now())) {
-          await record("staff.code_failed", "denied", sourceKey, user.id);
+        // Too many tries at this person from this source: answer like a wrong code. Only this source is stopped.
+        if (await personSourceOver(user.id, sourceKey)) {
+          await fail(user.id, user, sourceKey);
           return { ok: false, reason: "wrong" };
         }
         // The try is counted before the code is compared, in one atomic step, so a burst of guesses cannot get more than codeTries looks.
@@ -381,12 +418,12 @@ export function createStaffService(deps: {
           // With the app switched on, only a code from the app (or a recovery code) opens the door. An emailed code is never accepted.
           const r = await appCodeOk(user, codeRaw, true);
           if (r === "wrong") {
-            await fail(user, "staff.code_failed", sourceKey);
+            await fail(user.id, user, sourceKey);
             return { ok: false, reason: "wrong" };
           }
           recoveryUsed = r === "recovery";
         } else if (!/^\d{6}$/.test(code) || !same(token.tokenHash, h(`${user.id}:${code}`))) {
-          await fail(user, "staff.code_failed", sourceKey);
+          await fail(user.id, user, sourceKey);
           return { ok: false, reason: "wrong" };
         }
         if (!(await store.consumeToken(token.id))) return { ok: false, reason: "expired" };
@@ -400,7 +437,6 @@ export function createStaffService(deps: {
         const sessionToken = newToken();
         const expiresAt = now() + STAFF_LIMITS.sessionHours * 60 * minute;
         await store.createToken({ userId: user.id, kind: "session", tokenHash: h(sessionToken), expiresAt });
-        await store.updateUser(user.id, { failedAttempts: 0, lockedUntil: null });
         await record("staff.signin", "ok", sourceKey, user.id);
         return { ok: true, sessionToken, expiresAt };
       } catch {
@@ -438,7 +474,7 @@ export function createStaffService(deps: {
       const user = found && found.usedAt === null && found.expiresAt > now() ? await store.getUser(found.userId) : null;
       if (!found || !user || user.status !== "active") return bad;
       if (!(await store.consumeToken(found.id))) return bad;
-      await store.updateUser(user.id, { passwordHash: await hashPassword(password), failedAttempts: 0, lockedUntil: null });
+      await store.updateUser(user.id, { passwordHash: await hashPassword(password) });
       // A new password signs the person out everywhere.
       await store.revokeTokens(user.id, "session");
       await store.revokeTokens(user.id, "code");
@@ -492,11 +528,9 @@ export function createStaffService(deps: {
         if (!session) return { ok: false, reason: "signed_out" };
         const user = session.user;
         if (await sourceOver("staff.code_attempt", sourceKey)) return { ok: false, reason: "locked" };
-        if (user.lockedUntil && user.lockedUntil > now()) return { ok: false, reason: "locked" };
         const code = typeof codeRaw === "string" ? codeRaw.replace(/\s/g, "") : "";
         const token = typeof challenge === "string" && /^[0-9a-f-]{36}$/.test(challenge) ? await store.getToken(challenge) : null;
         if (!token || token.kind !== "payout" || token.userId !== user.id || token.usedAt !== null || token.expiresAt <= now()) {
-          await record("staff.code_failed", "denied", sourceKey, user.id);
           return { ok: false, reason: "expired" };
         }
         const tries = await store.incrementTokenAttempts(token.id);
@@ -507,11 +541,11 @@ export function createStaffService(deps: {
         if (user.totp?.enabled) {
           // The app only: a recovery code is for getting back in, never for moving money.
           if ((await appCodeOk(user, codeRaw, false)) === "wrong") {
-            await fail(user, "staff.code_failed", sourceKey);
+            await fail(user.id, user, sourceKey);
             return { ok: false, reason: "wrong" };
           }
         } else if (!/^\d{6}$/.test(code) || !same(token.tokenHash, h(`payout:${user.id}:${code}`))) {
-          await fail(user, "staff.code_failed", sourceKey);
+          await fail(user.id, user, sourceKey);
           return { ok: false, reason: "wrong" };
         }
         if (!(await store.consumeToken(token.id))) return { ok: false, reason: "expired" };
@@ -555,7 +589,7 @@ export function createStaffService(deps: {
         if (!user || user.status !== "active") return { ok: false, reason: "unavailable" };
         if (user.totp?.enabled) return { ok: false, reason: "already" };
         const secret = newTotpSecret();
-        await store.setTotp(user.id, { secretEnc: encryptSecret(secret, deps.pepper), enabled: false });
+        await store.setTotp(user.id, { secretEnc: sealSecret(secret), enabled: false });
         await record("owner.authenticator_started", "ok", undefined, user.id);
         return { ok: true, secret, uri: otpauthUri(user.email, secret) };
       } catch {
@@ -569,15 +603,14 @@ export function createStaffService(deps: {
         if (await sourceOver("staff.code_attempt", sourceKey)) return { ok: false, reason: "locked" };
         const user = await store.getUser(userId);
         if (!user || user.totp?.enabled || !user.totp?.secretEnc) return { ok: false, reason: "none" };
-        if (user.lockedUntil && user.lockedUntil > now()) return { ok: false, reason: "locked" };
-        const secret = decryptSecret(user.totp.secretEnc, deps.pepper);
+        const secret = openSecret(user.totp.secretEnc);
         const step = secret ? verifyTotp(secret, codeRaw, now(), user.totp.lastStep) : null;
         if (step === null || !(await store.claimTotpStep(user.id, step))) {
-          await fail(user, "staff.code_failed", sourceKey);
+          await fail(user.id, user, sourceKey);
           return { ok: false, reason: "wrong" };
         }
         const codes = newRecoveryCodes();
-        await store.replaceRecoveryCodes(user.id, codes.map((c) => hashRecoveryCode(c, deps.pepper)));
+        await store.replaceRecoveryCodes(user.id, codes.map((c) => recoveryHash(c)));
         await store.setTotp(user.id, { enabled: true });
         await record("owner.authenticator_on", "ok", sourceKey, user.id);
         return { ok: true, recoveryCodes: codes };
@@ -592,13 +625,12 @@ export function createStaffService(deps: {
         if (await sourceOver("staff.code_attempt", sourceKey)) return { ok: false, reason: "locked" };
         const user = await store.getUser(userId);
         if (!user?.totp?.enabled) return { ok: false, reason: "none" };
-        if (user.lockedUntil && user.lockedUntil > now()) return { ok: false, reason: "locked" };
         if ((await appCodeOk(user, codeRaw, false)) === "wrong") {
-          await fail(user, "staff.code_failed", sourceKey);
+          await fail(user.id, user, sourceKey);
           return { ok: false, reason: "wrong" };
         }
         const codes = newRecoveryCodes();
-        await store.replaceRecoveryCodes(user.id, codes.map((c) => hashRecoveryCode(c, deps.pepper)));
+        await store.replaceRecoveryCodes(user.id, codes.map((c) => recoveryHash(c)));
         await record("owner.recovery_codes_renewed", "ok", sourceKey, user.id);
         return { ok: true, recoveryCodes: codes };
       } catch {
@@ -606,12 +638,15 @@ export function createStaffService(deps: {
       }
     },
 
-    async getSession(sessionToken: string | undefined): Promise<SessionInfo | null> {
+    async getSession(sessionToken: string | undefined, opts: { setup?: boolean } = {}): Promise<SessionInfo | null> {
       if (!sessionToken || sessionToken.length < 20 || sessionToken.length > 100) return null;
       const t = await store.findTokenByHash("session", h(sessionToken));
       if (!t || t.usedAt !== null || t.expiresAt <= now()) return null;
       const user = await store.getUser(t.userId);
-      return user && user.status === "active" ? { user } : null;
+      if (!user || user.status !== "active") return null;
+      // Live payments: an owner without the authenticator app gets no session here, except to set the app up.
+      if (area === "owner" && !opts.setup && deps.appRequired?.() && user.totp?.enabled !== true) return null;
+      return { user };
     },
 
     async signOut(sessionToken: string | undefined): Promise<void> {

@@ -36,15 +36,15 @@ describe("maizz_hit (0010): count and record in one step", () => {
   });
 
   it("forgets attempts older than the window", async () => {
-    await db.query("insert into audit_log (at, actor, action, source_key) values (now() - interval '2 hours', 'system', 'test.old', 'k')");
+    await db.query("insert into limit_hits (at, action, source_key) values (now() - interval '2 hours', 'test.old', 'k')");
     expect(await hit("test.old", "k", 60)).toBe(1);
     expect(await hit("test.old", "k", 24 * 60)).toBe(3); // the old one, the first hit, and this one
   });
 
-  it("records who, what and the outcome, and nothing personal", async () => {
-    await db.query("select maizz_hit('test.rec', 'k', 15, 'denied', 'target-1', 'unknown')");
-    const row = (await db.query<{ actor: string; outcome: string; target: string }>("select actor, outcome, target from audit_log where action = 'test.rec'")).rows[0]!;
-    expect(row).toEqual({ actor: "unknown", outcome: "denied", target: "target-1" });
+  it("keeps counters out of the permanent audit log", async () => {
+    await db.query("select maizz_hit('test.rec', 'k', 15)");
+    expect((await db.query("select 1 from audit_log where action = 'test.rec'")).rows).toHaveLength(0);
+    expect((await db.query("select 1 from limit_hits where action = 'test.rec'")).rows).toHaveLength(1);
   });
 
   it("refuses nonsense", async () => {
@@ -279,5 +279,65 @@ describe("0012: safety wait after a payout account is changed", () => {
     await setAccount(id, "ACCT_OTHER_1");
     await db.query("update churches set giving_paused = true where id = $1", [id]);
     expect(await changedAt(id)).toBeNull();
+  });
+});
+
+describe("0013: the database refuses a payout change while a church is open", () => {
+  const mk = async (slug: string, code: string) =>
+    (await db.query<{ id: string }>("insert into churches (name, slug, status, provider_subaccount_code) values ($1, $1, 'pending', $2) returning id", [slug, code])).rows[0]!.id;
+
+  it("refuses to change the account of an active church, however the update is made", async () => {
+    const id = await mk("act-1", "ACCT_ACT_1");
+    await db.query("update churches set status = 'active' where id = $1", [id]);
+    await expect(db.query("update churches set provider_subaccount_code = 'ACCT_ACT_X' where id = $1", [id])).rejects.toThrow(/maizz_payout_active/);
+    // Suspending and changing in one update does not get round it either.
+    await expect(db.query("update churches set status = 'suspended', provider_subaccount_code = 'ACCT_ACT_Y' where id = $1", [id])).rejects.toThrow(/maizz_payout_active/);
+    expect((await db.query<{ c: string }>("select provider_subaccount_code c from churches where id = $1", [id])).rows[0]!.c).toBe("ACCT_ACT_1");
+  });
+
+  it("still allows the change once the church is suspended, with the 24 hour wait", async () => {
+    const id = await mk("act-2", "ACCT_ACT_2");
+    await db.query("update churches set status = 'active' where id = $1", [id]);
+    await db.query("update churches set status = 'suspended' where id = $1", [id]);
+    await db.query("update churches set provider_subaccount_code = 'ACCT_ACT_2B' where id = $1", [id]);
+    await expect(db.query("update churches set status = 'active' where id = $1", [id])).rejects.toThrow(/maizz_payout_cooldown/);
+  });
+
+  it("leaves other edits of an active church alone", async () => {
+    const id = await mk("act-3", "ACCT_ACT_3");
+    await db.query("update churches set status = 'active' where id = $1", [id]);
+    await db.query("update churches set giving_paused = true where id = $1", [id]);
+  });
+});
+
+describe("0013: recovery codes are replaced in one step", () => {
+  const owner = async (email: string) => (await db.query<{ id: string }>("insert into owner_users (email, full_name) values ($1, 'O') returning id", [email])).rows[0]!.id;
+  const hashes = (n: number, seed: string) => Array.from({ length: n }, (_, i) => `${seed}${String(i).padStart(2, "0")}`.padEnd(64, "a"));
+
+  it("swaps all codes together", async () => {
+    const id = await owner("rc1@m.test");
+    await db.query("select maizz_replace_recovery_codes($1, $2)", [id, hashes(8, "a")]);
+    const r = await db.query<{ maizz_replace_recovery_codes: number }>("select maizz_replace_recovery_codes($1, $2)", [id, hashes(8, "b")]);
+    expect(r.rows[0]!.maizz_replace_recovery_codes).toBe(8);
+    expect((await db.query("select 1 from owner_recovery_codes where user_id = $1 and code_hash like 'a%'", [id])).rows).toHaveLength(0);
+  });
+
+  it("a failed swap changes nothing, so the owner is never left with no codes", async () => {
+    const id = await owner("rc2@m.test");
+    await db.query("select maizz_replace_recovery_codes($1, $2)", [id, hashes(8, "c")]);
+    // Two identical hashes break the unique rule halfway through; the old codes must survive.
+    await expect(db.query("select maizz_replace_recovery_codes($1, $2)", [id, [hashes(1, "d")[0], hashes(1, "d")[0]]])).rejects.toThrow();
+    expect((await db.query("select 1 from owner_recovery_codes where user_id = $1", [id])).rows).toHaveLength(8);
+    await expect(db.query("select maizz_replace_recovery_codes($1, $2)", [id, []])).rejects.toThrow();
+    expect((await db.query("select 1 from owner_recovery_codes where user_id = $1", [id])).rows).toHaveLength(8);
+  });
+});
+
+describe("0013: the nightly clean-up empties old counters", () => {
+  it("removes counters older than two days and keeps newer ones", async () => {
+    await db.query("insert into limit_hits (at, action, source_key) values (now() - interval '3 days', 'test.cc', 'k'), (now() - interval '1 hour', 'test.cc', 'k')");
+    const r = await db.query<{ maizz_clean_up: { counters: number } }>("select maizz_clean_up(30, 90)");
+    expect(r.rows[0]!.maizz_clean_up.counters).toBeGreaterThanOrEqual(1);
+    expect((await db.query("select 1 from limit_hits where action = 'test.cc'")).rows).toHaveLength(1);
   });
 });

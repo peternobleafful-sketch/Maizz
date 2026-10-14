@@ -85,7 +85,7 @@ export async function adminGate(args: {
 
   try {
     // The wrong attempt is counted and recorded in one atomic step, so a burst of simultaneous guesses cannot slip past the limit.
-    const mine = await audit.hit({ action: FAILED, sourceKey, minutes: ADMIN_LIMITS.windowMinutes, outcome: "denied", target: action, actor: "unknown" });
+    const mine = await audit.hit({ action: FAILED, sourceKey, minutes: ADMIN_LIMITS.windowMinutes });
     if (mine > ADMIN_LIMITS.perSource) {
       await args.onLocked?.();
       return Response.json(
@@ -93,7 +93,7 @@ export async function adminGate(args: {
         { status: 429, headers: { "Retry-After": String(ADMIN_LIMITS.windowMinutes * 60) } },
       );
     }
-    const everyone = await audit.countSince(FAILED, ADMIN_LIMITS.windowMinutes);
+    const everyone = await audit.countHits(FAILED, ADMIN_LIMITS.windowMinutes);
     if (everyone >= ADMIN_LIMITS.spikeAlert) await args.onSpike?.();
   } catch {
     logError("admin.audit_unavailable");

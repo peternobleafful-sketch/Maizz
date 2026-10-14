@@ -116,15 +116,15 @@ describe("signing in with the app on", () => {
     expect(await s.svc.verifyCode((b as { challenge: string }).challenge, codes[0]!, "src")).toEqual({ ok: false, reason: "wrong" });
   });
 
-  it("counts wrong app codes toward the lock like wrong passwords", async () => {
+  it("counts wrong app codes toward the guessing alert like wrong passwords, and never locks", async () => {
     const s = await setup();
     await s.enrol();
     for (let i = 0; i < 4; i += 1) {
       const r = await s.svc.signIn(EMAIL, PW, `s${i}`);
       for (let j = 0; j < 5; j += 1) await s.svc.verifyCode((r as { challenge: string }).challenge, "111111", `s${i}`);
     }
-    expect(s.store.users[0]!.failedAttempts).toBeGreaterThanOrEqual(20);
-    expect(s.alerts).toContain("owner_locked");
+    expect(s.alerts).toContain("owner_guessing");
+    expect((await s.svc.signIn(EMAIL, PW, "home")).ok).toBe(true);
   });
 
   it("leaves people without the app on the emailed code", async () => {

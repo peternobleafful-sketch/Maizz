@@ -127,8 +127,16 @@ export interface CheckoutStarted {
   fees: FeeBreakdown;
 }
 
-// Used when the giver gave no email (or gave anonymously). The payment provider needs some address.
-const STAND_IN_EMAIL = "giver@example.com";
+// Used when the giver gave no email (or gave anonymously). The payment provider needs some address, and it may send receipts there,
+// so it must be a mailbox Maizz owns (PROVIDER_STAND_IN_EMAIL). The test-mode fallback is never used with a live key.
+const TEST_STAND_IN_EMAIL = "giver@example.com";
+
+/** A live key without a Maizz-owned stand-in address. Nothing is started until it is set. */
+export class StandInEmailError extends Error {
+  constructor() {
+    super("PROVIDER_STAND_IN_EMAIL is not set. With a live key, gifts without an email need a mailbox Maizz owns (see .env.example).");
+  }
+}
 
 export async function startCheckout(args: {
   ledger: Ledger;
@@ -137,9 +145,15 @@ export async function startCheckout(args: {
   testMode: boolean;
   /** True when the Paystack key is a live one. Then no gift starts while the database holds any test gift. */
   live?: boolean;
+  /** A mailbox Maizz owns, used when the giver gave no email. Required with a live key. */
+  standInEmail?: string;
 }): Promise<CheckoutStarted> {
   const { ledger, provider, input, testMode } = args;
   if (args.live && (await ledger.hasTestGifts())) throw new LiveGuardError();
+  const configured = args.standInEmail?.trim();
+  const needsStandIn = input.anonymous || !input.email;
+  if (args.live && needsStandIn && (!configured || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(configured) || /@example\./i.test(configured))) throw new StandInEmailError();
+  const standIn = configured || TEST_STAND_IN_EMAIL;
   const church = await ledger.findChurch(input.churchSlug);
   const unavailable = new CheckoutError("church_unavailable", "This church cannot receive gifts right now.");
   if (!church || church.status !== "active" || church.paused) throw unavailable;
@@ -167,7 +181,7 @@ export async function startCheckout(args: {
     const result = await provider.initialize({
       reference,
       amountPesewas: gift.totalPesewas,
-      email: !input.anonymous && input.email ? input.email : STAND_IN_EMAIL,
+      email: !input.anonymous && input.email ? input.email : standIn,
       channel: "mobile_money",
       mobileMoney: { network: input.network, phone: input.phone },
       metadata: { church_id: church.id, gift_type: input.giftType },

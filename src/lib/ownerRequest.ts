@@ -1,4 +1,5 @@
 import { getAudit } from "./audit";
+import { allowedBeforeApp } from "./ownerRules";
 import type { StaffUser } from "./staff";
 import { sameSite, sourceOf } from "./staffRoutes";
 import { getStaffService, OWNER_COOKIE, readCookie } from "./staffRuntime";
@@ -12,7 +13,8 @@ export async function openOwnerRoute(req: Request, action: string): Promise<{ us
   if (!sameSite(req)) return Response.json({ error: "Not allowed" }, { status: 403 });
   let user: StaffUser | null;
   try {
-    user = (await getStaffService(process.env, { needMail: false, area: "owner" }).getSession(readCookie(req, OWNER_COOKIE)))?.user ?? null;
+    // With a live key an owner without the authenticator app gets a session here only for the app's own set-up calls.
+    user = (await getStaffService(process.env, { needMail: false, area: "owner" }).getSession(readCookie(req, OWNER_COOKIE), { setup: allowedBeforeApp(action) }))?.user ?? null;
   } catch {
     return Response.json({ error: "Sign-in is not available right now." }, { status: 503 });
   }

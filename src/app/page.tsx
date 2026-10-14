@@ -15,6 +15,9 @@ const PROMISES = [
   { t: "Every action recorded", d: "Refunds and changes to gifts and churches are written to a log that cannot be edited." },
 ];
 
+// Built fresh for each visit, so the browser-safety policy can attach its one-time marker (nonce) to the page.
+export const dynamic = "force-dynamic";
+
 export default function HomePage() {
   const example = addFees(10000);
   return (

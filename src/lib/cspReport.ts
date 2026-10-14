@@ -55,9 +55,13 @@ export function readCspReport(text: string): CspReport | null {
 /** At most 20 reports per source per hour are kept, so a noisy or hostile visitor cannot fill the audit log. */
 export const CSP_REPORTS_PER_HOUR = 20;
 
+export const CSP_REPORTS_PER_DAY = 200;
+
 export async function saveCspReport(audit: AuditLog, sourceKey: string, report: CspReport): Promise<boolean> {
   try {
-    if ((await audit.countSince("csp.report", 60, sourceKey)) >= CSP_REPORTS_PER_HOUR) return false;
+    if ((await audit.hit({ action: "csp.report", sourceKey, minutes: 60 })) > CSP_REPORTS_PER_HOUR) return false;
+    // A day-wide ceiling for everyone together, so many different visitors cannot fill the permanent log either.
+    if ((await audit.hit({ action: "csp.report_all", sourceKey: "all", minutes: 24 * 60 })) > CSP_REPORTS_PER_DAY) return false;
     await audit.record({
       actor: "browser",
       action: "csp.report",

@@ -3,7 +3,7 @@ import { removalDecision } from "../src/lib/teamRules";
 import type { StaffUser } from "../src/lib/staff";
 
 const u = (id: string, role: StaffUser["role"], status: StaffUser["status"] = "active"): StaffUser => ({
-  id, churchId: "c", email: `${id}@c.org`, fullName: id, role, status, passwordHash: "x", failedAttempts: 0, lockedUntil: null,
+  id, churchId: "c", email: `${id}@c.org`, fullName: id, role, status, passwordHash: "x", 
 });
 
 describe("removing a church owner (C6)", () => {

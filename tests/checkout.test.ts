@@ -221,8 +221,34 @@ describe("startCheckout: live key and test gifts", () => {
     const ledger = new FakeLedger();
     ledger.churches.set("maizz-test-church", makeChurch({ id: "c1", slug: "maizz-test-church", name: "T", subaccountCode: "ACCT_x" }));
     const m = mockFetch([{ json: { status: true, data: { status: "pay_offline", display_text: "Approve" } } }]);
-    const out = await startCheckout({ ledger, provider: provider(m.fn), input: input(), testMode: false, live: true });
+    const out = await startCheckout({ ledger, provider: provider(m.fn), input: input(), testMode: false, live: true, standInEmail: "gifts@maizz.africa" });
     expect(out.reference.startsWith("mz_test_")).toBe(false);
+  });
+
+  it("with a live key, a gift without an email is refused until Maizz's own stand-in mailbox is set", async () => {
+    const make = () => {
+      const ledger = new FakeLedger();
+      ledger.churches.set("maizz-test-church", makeChurch({ id: "c1", slug: "maizz-test-church", name: "T", subaccountCode: "ACCT_abc123def456ghi" }));
+      return ledger;
+    };
+    const anon = { ...input(), anonymous: true, email: undefined };
+    for (const bad of [undefined, "", "giver@example.com", "not-an-email"]) {
+      const m = mockFetch([{ json: { status: true, data: { status: "pay_offline", display_text: "Approve" } } }]);
+      await expect(startCheckout({ ledger: make(), provider: provider(m.fn), input: anon, testMode: false, live: true, standInEmail: bad })).rejects.toThrow(/PROVIDER_STAND_IN_EMAIL/);
+      expect(m.calls).toHaveLength(0);
+    }
+    const m = mockFetch([{ json: { status: true, data: { status: "pay_offline", display_text: "Approve" } } }]);
+    await startCheckout({ ledger: make(), provider: provider(m.fn), input: anon, testMode: false, live: true, standInEmail: "gifts@maizz.africa" });
+    expect(JSON.stringify(m.calls[0]!.body)).toContain("gifts@maizz.africa");
+    expect(JSON.stringify(m.calls[0]!.body)).not.toContain("example.com");
+  });
+
+  it("a giver who gave an email never needs the stand-in mailbox", async () => {
+    const ledger = new FakeLedger();
+    ledger.churches.set("maizz-test-church", makeChurch({ id: "c1", slug: "maizz-test-church", name: "T", subaccountCode: "ACCT_abc123def456ghi" }));
+    const m = mockFetch([{ json: { status: true, data: { status: "pay_offline", display_text: "Approve" } } }]);
+    await startCheckout({ ledger, provider: provider(m.fn), input: { ...input(), anonymous: false, email: "ama@grace.org" }, testMode: false, live: true });
+    expect(JSON.stringify(m.calls[0]!.body)).toContain("ama@grace.org");
   });
 
   it("does not look for test gifts when the key is a test key", async () => {

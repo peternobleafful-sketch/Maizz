@@ -20,11 +20,15 @@ export interface AuditLog {
   /** How many records with this action in the last N minutes (optionally from one source). */
   countSince(action: string, minutes: number, sourceKey?: string): Promise<number>;
   /**
-   * Records one attempt and returns how many this action and source have had in the last N minutes, including this one.
-   * Recording and counting happen in one database step, so a burst of simultaneous requests cannot all see "0 so far".
+   * Counts one attempt and returns how many this action and source have had in the last N minutes, including this one.
+   * Counting happens in one database step, so a burst of simultaneous requests cannot all see "0 so far".
    * Refuse the request when the returned number is over the limit.
+   * Counters live in their own small table (limit_hits), emptied every night. They never reach the permanent audit log,
+   * so a flood of junk requests cannot fill it.
    */
-  hit(args: { action: string; sourceKey: string; minutes: number; outcome?: AuditOutcome; target?: string; actor?: string }): Promise<number>;
+  hit(args: { action: string; sourceKey: string; minutes: number }): Promise<number>;
+  /** How many counted attempts (see hit) in the last N minutes, optionally from one source. Reads only. */
+  countHits(action: string, minutes: number, sourceKey?: string): Promise<number>;
 }
 
 export class AuditError extends Error {}
@@ -62,9 +66,20 @@ export function scrubDetail(detail: Record<string, unknown> | undefined): Record
 
 /** A one-way fingerprint of the caller's address. The address itself is never stored. */
 export function sourceKeyFor(req: Request, secret: string): string {
+  return createHmac("sha256", secret).update(clientAddress(req)).digest("hex").slice(0, 32);
+}
+
+/**
+ * The caller's address as Vercel saw it. Vercel sets x-vercel-forwarded-for itself and overwrites anything a caller sends,
+ * so it cannot be faked. The ordinary x-forwarded-for can carry a made-up first entry, so it is used only away from Vercel
+ * (local work and tests), never when running on Vercel.
+ */
+export function clientAddress(req: Request, env: Env = process.env): string {
+  const vercel = req.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
+  if (vercel) return vercel;
+  if (env.VERCEL) return req.headers.get("x-real-ip")?.trim() || "unknown";
   const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const ip = forwarded || req.headers.get("x-real-ip") || "unknown";
-  return createHmac("sha256", secret).update(ip).digest("hex").slice(0, 32);
+  return forwarded || req.headers.get("x-real-ip") || "unknown";
 }
 
 export function createSupabaseAudit(opts: { url: string; serviceKey: string; fetchFn?: typeof fetch }): AuditLog {
@@ -79,6 +94,18 @@ export function createSupabaseAudit(opts: { url: string; serviceKey: string; fet
     } catch {
       throw new AuditError("Could not reach the audit log");
     }
+  }
+
+  async function countRows(table: string, action: string, minutes: number, sourceKey?: string): Promise<number> {
+    const since = new Date(Date.now() - minutes * 60_000).toISOString();
+    let url = `${table}?action=eq.${encodeURIComponent(action)}&at=gte.${encodeURIComponent(since)}&select=id&limit=1`;
+    if (sourceKey) url += `&source_key=eq.${encodeURIComponent(sourceKey)}`;
+    const res = await send(url, { method: "GET", headers: { ...headers, Prefer: "count=exact" } });
+    if (!res.ok) throw new AuditError(`Audit log refused the count (${res.status})`);
+    const total = res.headers.get("content-range")?.split("/")[1];
+    const n = total === undefined ? NaN : Number(total);
+    if (!Number.isSafeInteger(n) || n < 0) throw new AuditError("Audit log gave an unreadable count");
+    return n;
   }
 
   return {
@@ -98,18 +125,11 @@ export function createSupabaseAudit(opts: { url: string; serviceKey: string; fet
       if (res.status !== 201) throw new AuditError(`Audit log refused the record (${res.status})`);
     },
 
-    async hit({ action, sourceKey, minutes, outcome, target, actor }) {
+    async hit({ action, sourceKey, minutes }) {
       const res = await send(`${opts.url.replace(/\/+$/, "")}/rest/v1/rpc/maizz_hit`, {
         method: "POST",
         headers,
-        body: JSON.stringify({
-          p_action: action,
-          p_source_key: sourceKey,
-          p_minutes: minutes,
-          p_outcome: outcome ?? "ok",
-          p_target: target ?? null,
-          p_actor: actor ?? "system",
-        }),
+        body: JSON.stringify({ p_action: action, p_source_key: sourceKey, p_minutes: minutes }),
       });
       if (!res.ok) throw new AuditError(`Audit log refused the attempt count (${res.status})`);
       const n: unknown = await res.json().catch(() => NaN);
@@ -118,15 +138,11 @@ export function createSupabaseAudit(opts: { url: string; serviceKey: string; fet
     },
 
     async countSince(action, minutes, sourceKey) {
-      const since = new Date(Date.now() - minutes * 60_000).toISOString();
-      let url = `${base}?action=eq.${encodeURIComponent(action)}&at=gte.${encodeURIComponent(since)}&select=id&limit=1`;
-      if (sourceKey) url += `&source_key=eq.${encodeURIComponent(sourceKey)}`;
-      const res = await send(url, { method: "GET", headers: { ...headers, Prefer: "count=exact" } });
-      if (!res.ok) throw new AuditError(`Audit log refused the count (${res.status})`);
-      const total = res.headers.get("content-range")?.split("/")[1];
-      const n = total === undefined ? NaN : Number(total);
-      if (!Number.isSafeInteger(n) || n < 0) throw new AuditError("Audit log gave an unreadable count");
-      return n;
+      return countRows(base, action, minutes, sourceKey);
+    },
+
+    async countHits(action, minutes, sourceKey) {
+      return countRows(`${opts.url.replace(/\/+$/, "")}/rest/v1/limit_hits`, action, minutes, sourceKey);
     },
   };
 }

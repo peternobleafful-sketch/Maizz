@@ -31,9 +31,23 @@ export const requireOwnerSession = cache(async (): Promise<OwnerSigned> => {
 });
 
 
-/** True until the first Maizz owner has set a password. Only then may the first owner be added with the admin key in Production. */
+/** Only for the layout: the owner even if the authenticator app is still off (so the set-up screen can be shown under a live key). */
+export const getOwnerSetupUser = cache(async (): Promise<StaffUser | null> => {
+  const token = (await cookies()).get(OWNER_COOKIE)?.value;
+  try {
+    return (await getStaffService(process.env, { needMail: false, area: "owner" }).getSession(token, { setup: true }))?.user ?? null;
+  } catch {
+    return null;
+  }
+});
+
+/**
+ * True only while there are NO owner rows at all. Only then may the first owner be added with the admin key in Production.
+ * (An owner who is invited but has not set a password yet still counts as a row, so the door closes the moment the first invite exists.
+ * To re-send that first invite, switch the admin tools on briefly with MAIZZ_ADMIN_TOOLS=on.)
+ */
 export async function noActiveOwnerYet(env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
   const { url, serviceKey } = requireSupabase(env);
   const owners = await createSupabaseStaffStore({ url, serviceKey, area: "owner" }).listUsers("platform");
-  return !owners.some((o) => o.status === "active");
+  return owners.length === 0;
 }

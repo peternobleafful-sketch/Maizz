@@ -179,14 +179,15 @@ describe("owner sign-in service", () => {
     expect(sent.at(-1)!.text).toContain("https://m.test/owner/reset?token=");
   });
 
-  it("records owner actions under an owner actor, and raises the owner lock alert", async () => {
+  it("records owner actions under an owner actor, and raises the owner guessing alert without locking", async () => {
     const { svc, sent, audit, alerts } = setup();
     await svc.invite({ churchId: "platform", churchName: "Maizz", email: "isaac@maizz.test", fullName: "Isaac", role: "owner", baseUrl: "https://m.test" });
     await svc.acceptInvite(/token=([\w-]+)/.exec(sent[0]!.text)![1]!, "correct horse battery");
     for (let i = 0; i < 20; i += 1) await svc.signIn("isaac@maizz.test", "wrong wrong wrong", `src${i}`);
     expect(audit.entries.some((e) => e.actor.startsWith("owner:"))).toBe(true);
+    expect((await svc.signIn("isaac@maizz.test", "correct horse battery", "home")).ok).toBe(true);
     expect(audit.entries.some((e) => e.actor.startsWith("staff:"))).toBe(false);
-    expect(alerts).toEqual(["owner_locked"]);
+    expect(alerts).toEqual(["owner_guessing"]);
   });
 });
 
@@ -217,13 +218,15 @@ describe("owner store (REST): authenticator app", () => {
 
   it("uses a recovery code only while unused, and stores hashes", async () => {
     const hash = "a".repeat(64);
-    const { m, store } = make([{ json: [{ id: "r1" }] }, { json: [] }, { json: [] }, { status: 201, json: [{}, {}] }]);
+    const { m, store } = make([{ json: [{ id: "r1" }] }, { json: [] }, { json: 2 }]);
     expect(await store.consumeRecoveryCode(U, hash)).toBe(true);
     expect(m.calls[0]!.url).toContain("owner_recovery_codes");
     expect(m.calls[0]!.url).toContain("used_at=is.null");
     expect(await store.consumeRecoveryCode(U, hash)).toBe(false);
     await store.replaceRecoveryCodes(U, [hash, "b".repeat(64)]);
-    expect(m.calls[2]!.method).toBe("DELETE");
-    expect(m.calls[3]!.body).toEqual([{ user_id: U, code_hash: hash }, { user_id: U, code_hash: "b".repeat(64) }]);
+    // One database call does both the clearing and the saving, so a failure cannot leave the owner with no codes.
+    expect(m.calls).toHaveLength(3);
+    expect(m.calls[2]!.url).toContain("rpc/maizz_replace_recovery_codes");
+    expect(m.calls[2]!.body).toEqual({ p_user: U, p_hashes: [hash, "b".repeat(64)] });
   });
 });

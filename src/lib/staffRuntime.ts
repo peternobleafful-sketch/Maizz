@@ -1,5 +1,5 @@
 import { getAudit } from "./audit";
-import { ConfigError, requireSupabase, type Env } from "./config";
+import { classifyPaystackKey, ConfigError, requireSupabase, type Env } from "./config";
 import { requireMailer } from "./mailer";
 import { getNotifier } from "./notifyRuntime";
 import { createStaffService, StaffError, type Area, type StaffService } from "./staff";
@@ -14,7 +14,11 @@ export function getStaffService(env: Env = process.env, opts: { needMail?: boole
   const pepper = env.STAFF_SECRET?.trim() ?? "";
   if (pepper.length < 32) throw new ConfigError("STAFF_SECRET is not set (it needs at least 32 characters).");
   const { url, serviceKey } = requireSupabase(env);
+  const totpKey = env.TOTP_KEY?.trim() || undefined;
+  if (totpKey !== undefined && totpKey.length < 32) throw new ConfigError("TOTP_KEY needs at least 32 characters.");
   return createStaffService({
+    totpKey,
+    appRequired: () => classifyPaystackKey(env.PAYSTACK_SECRET_KEY) === "live",
     store: createSupabaseStaffStore({ url, serviceKey, area: opts.area }),
     area: opts.area,
     audit: getAudit(env),

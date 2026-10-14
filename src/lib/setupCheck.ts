@@ -232,13 +232,12 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
       add("live_test_data", "Live key with test gifts in the database", true, "Not a live key, so test gifts here are expected. This check matters once a live key is used.");
     }
 
-    // 0010 adds the atomic attempt counters. This asks for a code that does not exist, so nothing is written.
+    // 0013 adds the nightly-cleaned counter table (0010 added the atomic functions). This only reads, so nothing is written.
     let counters: number | null = null;
     try {
-      const res = await fetchFn(`${rawUrl}/rest/v1/rpc/maizz_code_attempt`, {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ p_token: "00000000-0000-0000-0000-000000000000", p_area: "owner" }),
+      const res = await fetchFn(`${rawUrl}/rest/v1/limit_hits?select=id&limit=0`, {
+        method: "GET",
+        headers,
         signal: AbortSignal.timeout(10_000),
       });
       counters = res.status;
@@ -252,7 +251,7 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
       counters === 200
         ? "The attempt counters were found."
         : counters === 404
-          ? "Not found. Run 0010_atomic_limits_retention.sql (in supabase/migrations) in the Supabase SQL Editor."
+          ? "Not found. Run 0010_atomic_limits_retention.sql and then 0013_counters_and_payout_rule.sql (in supabase/migrations) in the Supabase SQL Editor."
           : "Could not check just now. Try again in a minute.",
     );
   } else {
@@ -282,6 +281,27 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
     rateOk
       ? "RATE_LIMIT_SECRET is set."
       : "Add RATE_LIMIT_SECRET in Vercel (Production): a long random string, at least 32 characters. Without it the giving page refuses gifts on the live site.",
+  );
+  const totpKeyOk = (env.TOTP_KEY?.trim().length ?? 0) >= 32;
+  add(
+    "totp_key",
+    "Authenticator key is set",
+    totpKeyOk,
+    totpKeyOk
+      ? "TOTP_KEY is set, so changing STAFF_SECRET cannot lock the owner out of the authenticator app."
+      : "Add TOTP_KEY in Vercel (Production, Sensitive): a long random string, at least 32 characters, different from STAFF_SECRET. Without it, changing STAFF_SECRET locks the owner out of the authenticator app. Write it in your password manager.",
+  );
+  const standIn = env.PROVIDER_STAND_IN_EMAIL?.trim() ?? "";
+  const standInOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(standIn) && !/@example\./i.test(standIn);
+  add(
+    "stand_in_email",
+    "Maizz mailbox for gifts without an email is set",
+    standInOk || kind !== "live",
+    standInOk
+      ? "PROVIDER_STAND_IN_EMAIL is set."
+      : kind === "live"
+        ? "FAIL: add PROVIDER_STAND_IN_EMAIL in Vercel (Production): a mailbox Maizz owns. With a live key, gifts without an email are refused until it is set."
+        : "Not needed while the key is a test key. Add PROVIDER_STAND_IN_EMAIL (a mailbox Maizz owns) before going live.",
   );
   const publicOk = publicBaseUrl(env) !== null;
   add(

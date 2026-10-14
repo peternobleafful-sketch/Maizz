@@ -150,3 +150,14 @@ Needs migration `0012_owner_authenticator.sql` (run it in Supabase **before** th
 - **Authenticator app:** Owner, System, "Sign-in security". Scan the picture with Google or Microsoft Authenticator, type the first code, then save the eight recovery codes (shown once). From then on sign-in and payout changes use the app, not email.
 - **Payout wait:** when a church's payout account is changed, it cannot be opened for gifts again for 24 hours, and the church's owners are emailed.
 - **Lost phone:** see `docs/INCIDENT_RESPONSE.md`.
+
+## Third review fixes (14 Oct 2026)
+
+Needs migration `0013_counters_and_payout_rule.sql` (run it in Supabase **before** the code goes live: the code now counts attempts in a new table).
+
+- **No lock-out by strangers:** wrong passwords never lock a person. Each address is limited on its own, and many wrong guesses send Maizz an alert.
+- **Counters apart from the permanent log:** attempt counters are in `limit_hits`, emptied every night.
+- **Live key, owner dashboard:** shut until the authenticator app is on.
+- **New Vercel settings (Production, Sensitive):** `TOTP_KEY` (32+ random characters, different from `STAFF_SECRET`), and before a live key `PROVIDER_STAND_IN_EMAIL` (a mailbox Maizz owns).
+- **Database rule:** a church's payout account cannot be changed while the church is active; suspend it first (then the 24-hour wait applies).
+- **Smaller:** team invites capped at 20 a day per church; applications are alerted at 100 instead of refused; request bodies have a size cap; the caller's address comes from Vercel's own header; GitHub Actions are pinned to commit versions; public pages are built per visit so the safety policy can mark them.

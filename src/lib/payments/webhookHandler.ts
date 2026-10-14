@@ -42,7 +42,7 @@ export async function processWebhook(args: {
   async function note(entry: Omit<AuditEntry, "actor">, throttle?: { max: number; minutes: number }): Promise<void> {
     if (!audit) return;
     try {
-      if (throttle && (await audit.countSince(entry.action, throttle.minutes)) >= throttle.max) return;
+      if (throttle && (await audit.hit({ action: entry.action, sourceKey: "all", minutes: throttle.minutes })) > throttle.max) return;
       await audit.record({ ...entry, actor: "webhook" });
     } catch {
       logError("audit.write_failed", { action: entry.action });

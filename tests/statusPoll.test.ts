@@ -17,7 +17,7 @@ describe("status polling (C1)", () => {
   });
   it("says no, without throwing, when the audit log is down", async () => {
     const audit = new FakeAudit();
-    audit.failReads = true;
+    audit.failWrites = true;
     expect(await mayAskProvider(audit, "mz_one_11111")).toBe(false);
   });
 });

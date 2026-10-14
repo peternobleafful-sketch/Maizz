@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import type { Env } from "./config";
 
 // Fingerprints used to count attempts. A raw phone number or address is never stored: only a keyed one-way fingerprint.
@@ -14,6 +14,14 @@ export function rateSecret(env: Env): string {
   const fallback = [env.STAFF_SECRET, env.SETUP_CHECK_TOKEN, env.SUPABASE_SERVICE_ROLE_KEY].map((v) => v?.trim()).find((v) => v && v.length >= 24);
   if (!fallback) throw new Error("RATE_LIMIT_SECRET is not set");
   return createHmac("sha256", fallback).update("maizz-rate-limit-v1").digest("hex");
+}
+
+/**
+ * A one-way fingerprint of a gift reference, 32 characters. Counters hold this, never the reference itself,
+ * so a counter row cannot be matched to a gift (and so to a giver) by reading the table.
+ */
+export function giftKey(reference: string): string {
+  return createHash("sha256").update(`gift:${reference}`).digest("hex").slice(0, 32);
 }
 
 /** A one-way fingerprint of a phone number, 32 characters. */

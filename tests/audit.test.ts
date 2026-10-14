@@ -85,13 +85,13 @@ describe("admin gate: tokens", () => {
     expect(audit.entries[0]).toMatchObject({ actor: "admin", outcome: "ok" });
   });
 
-  it("refuses wrong or missing tokens (401) and records each one", async () => {
+  it("refuses wrong or missing tokens (401) and counts each one, without filling the permanent log", async () => {
     const audit = new FakeAudit();
     for (const r of [req(), req({ token: "nope" }), req({ token: "" })]) {
       expect((await gate(audit, r))!.status).toBe(401);
     }
-    expect(audit.actions()).toEqual(["admin.auth_failed", "admin.auth_failed", "admin.auth_failed"]);
-    expect(audit.entries.every((e) => e.outcome === "denied")).toBe(true);
+    expect(audit.hitActions()).toEqual(["admin.auth_failed", "admin.auth_failed", "admin.auth_failed"]);
+    expect(audit.actions()).toEqual([]);
   });
 
   it("never writes the token, right or wrong, into the audit log", async () => {
@@ -113,8 +113,8 @@ describe("admin gate: attempt limits", () => {
     const locked = await gate(audit, req({ token: "wrong" }));
     expect(locked!.status).toBe(429);
     expect(locked!.headers.get("retry-after")).toBe("900");
-    // Every wrong attempt is recorded, including the one that was locked out.
-    expect(audit.actions().filter((a) => a === "admin.auth_failed")).toHaveLength(ADMIN_LIMITS.perSource + 1);
+    // Every wrong attempt is counted, including the one that was locked out.
+    expect(audit.hitActions().filter((a) => a === "admin.auth_failed")).toHaveLength(ADMIN_LIMITS.perSource + 1);
     // The right secret always goes through, and is audited.
     expect(await gate(audit, req({ token: TOKEN }))).toBeNull();
     expect(audit.actions().filter((a) => a === "admin.setup_check")).toHaveLength(1);
@@ -237,8 +237,9 @@ describe("daily check gate (CRON_SECRET)", () => {
     const audit = new FakeAudit();
     expect((await cronGate(audit, req({ token: TOKEN })))!.status).toBe(401);
     expect(await cronGate(audit, req({ token: CRON }))).toBeNull();
-    expect(audit.actions()).toEqual(["cron.auth_failed", "cron.reconcile"]);
-    expect(audit.entries[1]).toMatchObject({ actor: "cron" });
+    expect(audit.hitActions()).toEqual(["cron.auth_failed"]);
+    expect(audit.actions()).toEqual(["cron.reconcile"]);
+    expect(audit.entries[0]).toMatchObject({ actor: "cron" });
   });
 
   it("locks after repeated wrong secrets, counted apart from the admin tools", async () => {
@@ -257,6 +258,6 @@ describe("daily check gate (CRON_SECRET)", () => {
     expect((await cronGate(audit, req({ token: "wrong" })))!.status).toBe(429);
     // Wrong tries at the daily check do not lock the watchdog's wrong-secret counter.
     expect((await watchdog(req({ token: "wrong" })))!.status).toBe(401);
-    expect(audit.actions()).toContain("watchdog.auth_failed");
+    expect(audit.hitActions()).toContain("watchdog.auth_failed");
   });
 });

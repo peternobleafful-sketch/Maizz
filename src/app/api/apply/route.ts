@@ -43,14 +43,21 @@ export async function POST(req: Request) {
     const audit = getAudit();
     const source = sourceOf(req);
     // Counted and recorded in one atomic step, so simultaneous requests cannot slip past the daily limit.
-    if ((await audit.hit({ action: "church.apply", sourceKey: source, minutes: 24 * 60, actor: "public" })) > LIMIT_PER_DAY) {
+    if ((await audit.hit({ action: "church.apply", sourceKey: source, minutes: 24 * 60 })) > LIMIT_PER_DAY) {
       return reply(429, "Too many applications from this connection today. Please try again tomorrow.");
     }
     const data = getOwnerData();
-    if ((await data.listApplications()).filter((a) => a.status === "new").length >= MAX_WAITING) {
-      return reply(503, "We are not taking new applications right now. Please try again soon.");
-    }
+    // Real churches are never turned away. If a lot are waiting, the owner is told (once an hour) instead.
+    const waiting = (await data.listApplications()).filter((a) => a.status === "new").length;
     await data.createApplication({ churchName, town, contactName, contactEmail: email, contactPhone: phone, note });
+    if (waiting + 1 >= MAX_WAITING) {
+      await getNotifier()
+        .alert("applications_backlog", "Many church applications are waiting", [
+          `${waiting + 1} applications are waiting for you. Real churches are still being accepted.`,
+          "If many look like junk, someone may be filling the form. Decline them in the owner dashboard and consider the bot check.",
+        ])
+        .catch(() => undefined);
+    }
     await getNotifier().alert("church_application", "A church applied to join Maizz", [
       "A new church application is waiting for you.",
       "Open your owner dashboard and look under Applications.",

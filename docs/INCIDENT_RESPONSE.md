@@ -39,7 +39,8 @@ Do each in the service's own dashboard, then paste the new value into Vercel (Se
 | --- | --- | --- |
 | `PAYSTACK_SECRET_KEY` | Paystack dashboard, Settings, API Keys | Webhook signatures use the same key, so Paystack's notices keep working after the swap |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase, Project Settings, API | Old key stops working at once |
-| `SETUP_CHECK_TOKEN`, `CRON_SECRET`, `STAFF_SECRET` | Make up new long random strings | Changing `STAFF_SECRET` signs everyone out and makes every unused invite, reset link and code unusable. Re-send invites afterwards |
+| `SETUP_CHECK_TOKEN`, `CRON_SECRET`, `STAFF_SECRET` | Make up new long random strings | Changing `STAFF_SECRET` signs everyone out and makes every unused invite, reset link and code unusable. Re-send invites afterwards. **Set `TOTP_KEY` first** (see below): with it, the owner's authenticator app and recovery codes keep working after `STAFF_SECRET` changes. Without it, changing `STAFF_SECRET` locks the owner out of the app |
+| `TOTP_KEY` | Make up a new long random string (32+ characters, not the same as `STAFF_SECRET`) | **Do not change it casually.** Changing or losing it makes the stored authenticator secret and the old recovery codes unreadable. Then the owner needs the lost-phone steps below (Supabase SQL) to set the app up again. Keep a copy in the password manager |
 | `RESEND_API_KEY` | Resend dashboard, API Keys | |
 | GitHub, Vercel, Supabase, Paystack passwords | Each service | Turn on 2FA if it was off. Sign out other sessions |
 

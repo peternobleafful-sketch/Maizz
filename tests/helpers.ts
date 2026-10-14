@@ -247,11 +247,20 @@ export class FakeAudit implements AuditLog {
     this.entries.push({ ...entry, at: Date.now() });
   }
 
-  async hit(a: { action: string; sourceKey: string; minutes: number; outcome?: AuditEntry["outcome"]; target?: string; actor?: string }): Promise<number> {
+  /** Counters (limit_hits). Kept apart from entries, like the real database, so they never reach the permanent log. */
+  hits: { action: string; sourceKey: string; at: number }[] = [];
+
+  async hit(a: { action: string; sourceKey: string; minutes: number }): Promise<number> {
     if (this.failWrites) throw new Error("audit down");
-    this.entries.push({ actor: a.actor ?? "system", action: a.action, target: a.target, outcome: a.outcome ?? "ok", sourceKey: a.sourceKey, at: Date.now() });
+    this.hits.push({ action: a.action, sourceKey: a.sourceKey, at: Date.now() });
     const cutoff = Date.now() - a.minutes * 60_000;
-    return this.entries.filter((e) => e.action === a.action && e.sourceKey === a.sourceKey && e.at >= cutoff).length;
+    return this.hits.filter((e) => e.action === a.action && e.sourceKey === a.sourceKey && e.at >= cutoff).length;
+  }
+
+  async countHits(action: string, minutes: number, sourceKey?: string): Promise<number> {
+    if (this.failReads) throw new Error("audit down");
+    const cutoff = Date.now() - minutes * 60_000;
+    return this.hits.filter((e) => e.action === action && e.at >= cutoff && (sourceKey === undefined || e.sourceKey === sourceKey)).length;
   }
 
   async countSince(action: string, minutes: number, sourceKey?: string): Promise<number> {
@@ -264,10 +273,16 @@ export class FakeAudit implements AuditLog {
 
   shift(minutes: number): void {
     for (const e of this.entries) e.at -= minutes * 60_000;
+    for (const e of this.hits) e.at -= minutes * 60_000;
   }
 
   actions(): string[] {
     return this.entries.map((e) => e.action);
+  }
+
+  /** The actions counted in the short-lived counters. */
+  hitActions(): string[] {
+    return this.hits.map((e) => e.action);
   }
 }
 
@@ -287,7 +302,7 @@ export class FakeStaffStore implements StaffStore {
   }
   async createUser(u: { churchId: string; email: string; fullName: string; role: StaffUser["role"] }) {
     if (this.users.some((x) => x.email === u.email)) throw new StaffError("exists", "exists");
-    const user: StaffUser = { id: `00000000-0000-0000-0000-${String(++this.n).padStart(12, "0")}`, ...u, status: "invited", passwordHash: null, failedAttempts: 0, lockedUntil: null };
+    const user: StaffUser = { id: `00000000-0000-0000-0000-${String(++this.n).padStart(12, "0")}`, ...u, status: "invited", passwordHash: null };
     this.users.push(user);
     return user;
   }
@@ -315,11 +330,6 @@ export class FakeStaffStore implements StaffStore {
     const t = this.tokens.find((x) => x.id === id)!;
     t.attempts += 1;
     return t.attempts;
-  }
-  async incrementFailures(userId: string) {
-    const u = this.users.find((x) => x.id === userId)!;
-    u.failedAttempts += 1;
-    return u.failedAttempts;
   }
   recovery = new Map<string, { hash: string; used: boolean }[]>();
   async setTotp(userId: string, patch: { secretEnc?: string | null; enabled?: boolean }) {

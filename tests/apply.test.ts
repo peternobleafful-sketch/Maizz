@@ -52,7 +52,8 @@ describe("POST /api/apply", () => {
       { churchName: "Grace Chapel", town: "Accra", contactName: "Ama Boateng", contactEmail: "ama@grace.org", contactPhone: "0551234987", note: "Hello" },
     ]);
     expect(state.alerts).toEqual(["church_application"]);
-    expect(state.audit.actions()).toEqual(["church.apply"]);
+    expect(state.audit.hitActions()).toEqual(["church.apply"]);
+    expect(state.audit.actions()).toEqual([]);
     expect(JSON.stringify(state.audit.entries)).not.toMatch(/Grace|ama@|0551234987/i);
   });
 
@@ -94,10 +95,17 @@ describe("POST /api/apply", () => {
     expect(state.saved).toHaveLength(3);
   });
 
-  it("pauses when too many are waiting", async () => {
+  it("still saves a real application when many are waiting, and tells the owner instead of refusing", async () => {
     state.waiting = 100;
-    expect((await send(good)).status).toBe(503);
-    expect(state.saved).toHaveLength(0);
+    expect((await send(good)).status).toBe(200);
+    expect(state.saved).toHaveLength(1);
+    expect(state.alerts).toContain("applications_backlog");
+  });
+
+  it("sends no backlog alert while few are waiting", async () => {
+    state.waiting = 5;
+    await send(good);
+    expect(state.alerts).not.toContain("applications_backlog");
   });
 
   it("does not leak why it failed", async () => {

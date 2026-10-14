@@ -1,7 +1,8 @@
 import { getAudit, sourceKeyFor } from "@/lib/audit";
 import { REFERENCE_PATTERN, toGiverStep } from "@/lib/checkout";
 import { logError } from "@/lib/log";
-import { rateSecret } from "@/lib/rateKey";
+import { giftKey, rateSecret } from "@/lib/rateKey";
+import { readCappedText, sameSite } from "@/lib/staffRoutes";
 import { getLedger, getPaymentProvider } from "@/lib/payments";
 
 export const runtime = "nodejs";
@@ -13,10 +14,12 @@ const OTP_LIMIT_PER_GIFT = 10;
 
 /** Public. Sends the code a giver received (some networks ask for one). Limited per source. */
 export async function POST(req: Request) {
-  const text = await req.text();
+  // Only our own pages may call this, and never read more than a small body.
+  if (!sameSite(req)) return Response.json({ error: "Not allowed" }, { status: 403 });
+  const text = await readCappedText(req, 1_000).catch(() => null);
   let raw: unknown;
   try {
-    raw = text.length <= 1_000 ? JSON.parse(text) : null;
+    raw = text !== null ? JSON.parse(text) : null;
   } catch {
     raw = null;
   }
@@ -28,8 +31,8 @@ export async function POST(req: Request) {
   try {
     const audit = getAudit();
     const source = sourceKeyFor(req, rateSecret(process.env));
-    const tries = await audit.hit({ action: "checkout.code", sourceKey: source, minutes: 10, actor: "giver", target: reference });
-    const forGift = await audit.hit({ action: "checkout.code_gift", sourceKey: reference.slice(0, 64), minutes: 10, actor: "giver" });
+    const tries = await audit.hit({ action: "checkout.code", sourceKey: source, minutes: 10 });
+    const forGift = await audit.hit({ action: "checkout.code_gift", sourceKey: giftKey(reference), minutes: 10 });
     if (tries > OTP_LIMIT_PER_SOURCE || forGift > OTP_LIMIT_PER_GIFT) {
       return Response.json({ error: "Too many attempts. Please wait a few minutes and try again." }, { status: 429, headers: { "Retry-After": "600" } });
     }

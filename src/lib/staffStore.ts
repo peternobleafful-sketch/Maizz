@@ -23,8 +23,6 @@ function toUser(row: unknown, owner = false): StaffUser {
     role: owner ? "owner" : (row.role as Role),
     status: row.status as UserStatus,
     passwordHash: typeof row.password_hash === "string" ? row.password_hash : null,
-    failedAttempts: typeof row.failed_attempts === "number" ? row.failed_attempts : 0,
-    lockedUntil: ms(row.locked_until),
     ...(owner
       ? {
           totp: {
@@ -127,8 +125,6 @@ export function createSupabaseStaffStore(opts: {
       const body: Rec = {};
       if (patch.passwordHash !== undefined) body.password_hash = patch.passwordHash;
       if (patch.status !== undefined) body.status = patch.status;
-      if (patch.failedAttempts !== undefined) body.failed_attempts = patch.failedAttempts;
-      if (patch.lockedUntil !== undefined) body.locked_until = patch.lockedUntil === null ? null : iso(patch.lockedUntil);
       const res = await request("PATCH", `${usersTable}?id=eq.${q(id)}`, body, "return=representation");
       if ((await rows(res, "person update")).length !== 1) throw new StaffError("unavailable", "That person was not found");
     },
@@ -164,9 +160,6 @@ export function createSupabaseStaffStore(opts: {
     async incrementTokenAttempts(id) {
       return count(await request("POST", "rpc/maizz_code_attempt", { p_token: id, p_area: owner ? "owner" : "church" }), "code attempt count");
     },
-    async incrementFailures(userId) {
-      return count(await request("POST", "rpc/maizz_staff_fail", { p_user: userId, p_area: owner ? "owner" : "church" }), "wrong attempt count");
-    },
     async setTotp(userId, patch) {
       if (!owner) throw new StaffError("unavailable", "Only the Maizz owner has an authenticator app");
       const body: Rec = {};
@@ -182,10 +175,9 @@ export function createSupabaseStaffStore(opts: {
     },
     async replaceRecoveryCodes(userId, hashes) {
       if (!owner) throw new StaffError("unavailable", "Only the Maizz owner has recovery codes");
-      await rows(await request("DELETE", `owner_recovery_codes?user_id=eq.${q(userId)}`, undefined, "return=representation"), "recovery code clear");
-      if (hashes.length > 0) {
-        await rows(await request("POST", "owner_recovery_codes", hashes.map((code_hash) => ({ user_id: userId, code_hash })), "return=representation"), "recovery code save");
-      }
+      // One database step: the old codes go and the new ones arrive together, or nothing changes.
+      const saved = await count(await request("POST", "rpc/maizz_replace_recovery_codes", { p_user: userId, p_hashes: hashes }), "recovery code save");
+      if (saved !== hashes.length) throw new StaffError("unavailable", "Recovery codes were not all saved");
     },
     async consumeRecoveryCode(userId, hash) {
       if (!owner) return false;

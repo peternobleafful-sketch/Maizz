@@ -144,25 +144,51 @@ describe("two-step sign-in", () => {
     expect((await svc.signIn("ama@church.org", PASSWORD, "home")).ok).toBe(true);
   });
 
-  it("20 wrong tries from many places lock the person for everyone, and raise one alert", async () => {
+  it("20 wrong tries from many places never lock the person: the right password still works, and one alert goes out", async () => {
     const alerts: string[] = [];
     svc = createStaffService({ store, audit, mailer, pepper: PEPPER, now: () => clock, alert: async (k) => void alerts.push(k) });
     await activeUser();
-    for (let i = 0; i < STAFF_LIMITS.personFailures; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", `place${i}`);
-    expect(audit.actions()).toContain("staff.locked");
-    expect(alerts).toEqual(["staff_locked"]);
-    expect(await svc.signIn("ama@church.org", PASSWORD, "home")).toEqual({ ok: false, reason: "wrong" });
-    clock += 16 * 60_000;
+    for (let i = 0; i < STAFF_LIMITS.personGuessAlert + 15; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", `place${i}`);
+    expect(audit.actions()).toContain("staff.guessing_spike");
+    expect(alerts).toEqual(["staff_guessing"]);
+    // The real person, from their own place, is not refused because of strangers' guesses.
     expect((await svc.signIn("ama@church.org", PASSWORD, "home")).ok).toBe(true);
   });
 
-  it("a locked person and an email with no account get exactly the same answer", async () => {
+  it("wrong guesses leave nothing in the permanent log, only short-lived counters", async () => {
     await activeUser();
-    for (let i = 0; i < STAFF_LIMITS.personFailures; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", `place${i}`);
-    const locked = await svc.signIn("ama@church.org", PASSWORD, "fresh1");
-    const unknown = await svc.signIn("nobody@church.org", PASSWORD, "fresh2");
-    expect(locked).toEqual(unknown);
-    expect(locked).toEqual({ ok: false, reason: "wrong" });
+    const before = audit.entries.length;
+    for (let i = 0; i < 6; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", "attacker");
+    for (let i = 0; i < 6; i++) await svc.signIn("ghost@church.org", "wrong wrong wrong", "attacker");
+    expect(audit.entries.length).toBe(before);
+    expect(audit.hits.length).toBeGreaterThan(0);
+  });
+
+  it("an email with no account and a real one cost the same number of counter calls", async () => {
+    await activeUser();
+    const count = async (email: string) => {
+      const n = audit.hits.length;
+      await svc.signIn(email, "wrong wrong wrong", `src-${email}`);
+      return audit.hits.length - n;
+    };
+    expect(await count("ama@church.org")).toBe(await count("ghost@church.org"));
+  });
+
+  it("a wrong guess count that is old does not count: only the last 15 minutes", async () => {
+    const alerts: string[] = [];
+    svc = createStaffService({ store, audit, mailer, pepper: PEPPER, now: () => clock, alert: async (k) => void alerts.push(k) });
+    await activeUser();
+    for (let i = 0; i < 12; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", `a${i}`);
+    audit.shift(20);
+    for (let i = 0; i < 12; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", `b${i}`);
+    expect(alerts).toEqual([]);
+  });
+
+  it("wide guessing across many names raises one door-wide alert", async () => {
+    const alerts: string[] = [];
+    svc = createStaffService({ store, audit, mailer, pepper: PEPPER, now: () => clock, alert: async (k) => void alerts.push(k) });
+    for (let i = 0; i < STAFF_LIMITS.doorGuessAlert + 5; i++) await svc.signIn(`ghost${i}@church.org`, "wrong wrong wrong", `p${i}`);
+    expect(alerts).toEqual(["staff_guessing_wide"]);
   });
 
   it("many tries from one place lock that place, whoever they try", async () => {
@@ -176,7 +202,8 @@ describe("two-step sign-in", () => {
     await activeUser();
     const results = await Promise.all(Array.from({ length: 60 }, () => svc.signIn("ama@church.org", "wrong wrong wrong", "burst")));
     expect(results.every((r) => !r.ok)).toBe(true);
-    expect(store.users[0]!.failedAttempts).toBe(STAFF_LIMITS.personSourceAttempts);
+    // Only the first 30 get as far as the person check; the rest are stopped at the door for that place.
+    expect(audit.hits.filter((h) => h.action === "staff.failed_person")).toHaveLength(STAFF_LIMITS.sourceAttempts);
   });
 
   it("a burst of simultaneous code guesses gets only five looks in all", async () => {
@@ -188,7 +215,6 @@ describe("two-step sign-in", () => {
     // Every guess comes from a different place, so only the per-code limit can stop them.
     await Promise.all(guesses.map((g, i) => svc.verifyCode(one.challenge, g, `g${i}`)));
     expect(store.tokens.find((t) => t.id === one.challenge)!.attempts).toBe(guesses.length);
-    expect(store.users[0]!.failedAttempts).toBe(STAFF_LIMITS.codeTries);
     expect(await svc.verifyCode(one.challenge, right, "late")).toEqual({ ok: false, reason: "expired" });
   });
 
@@ -307,11 +333,12 @@ describe("password reset", () => {
     expect(await svc.resetPassword(link, "a brand new password")).toMatchObject({ ok: false, reason: "invalid" });
   });
 
-  it("tells the owner when a person is locked out", async () => {
+  it("tells the owner when a person is being guessed at, without locking anyone", async () => {
     const alerts: string[] = [];
     svc = createStaffService({ store, audit, mailer, pepper: PEPPER, now: () => clock, alert: async (k) => void alerts.push(k) });
     await activeUser();
-    for (let i = 0; i < STAFF_LIMITS.personFailures; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", `s${i}`);
-    expect(alerts).toEqual(["staff_locked"]);
+    for (let i = 0; i < STAFF_LIMITS.personGuessAlert; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", `s${i}`);
+    expect(alerts).toEqual(["staff_guessing"]);
   });
+
 });

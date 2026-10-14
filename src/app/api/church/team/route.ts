@@ -6,7 +6,7 @@ import { PUBLIC_URL_MESSAGE, publicBaseUrl, requireSupabase } from "@/lib/config
 import { readJson, sameSite, sourceOf } from "@/lib/staffRoutes";
 import { getLedger } from "@/lib/payments";
 import { getNotifier } from "@/lib/notifyRuntime";
-import { removalDecision } from "@/lib/teamRules";
+import { mayInvite, removalDecision } from "@/lib/teamRules";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +54,7 @@ export async function POST(req: Request) {
     if (action === "invite") {
       const role = ROLES.find((r) => r === body.role) as Role | undefined;
       if (!role) return NO(400, "Choose a role.");
+      if (!(await mayInvite(audit, church.id))) return NO(429, "Too many invites today. Try again tomorrow, or ask Maizz.");
       if (!(await record("staff.team_invite", church.id))) return NO(503, AUDIT_DOWN);
       const user = await service.invite({
         churchId: church.id,
@@ -73,6 +74,7 @@ export async function POST(req: Request) {
     if (target.id === me.id) return NO(400, "You cannot change your own access.");
 
     if (action === "resend") {
+      if (!(await mayInvite(audit, church.id))) return NO(429, "Too many invites today. Try again tomorrow, or ask Maizz.");
       if (!(await record("staff.team_resend", target.id))) return NO(503, AUDIT_DOWN);
       await service.resendInvite({ userId: target.id, churchName: church.name, baseUrl });
       return Response.json({ message: "A new invite email was sent." });
@@ -90,7 +92,7 @@ export async function POST(req: Request) {
       if (!(await record(`staff.team_${action}`, target.id))) return NO(503, AUDIT_DOWN);
       // A person who never set a password goes back to "invited", never straight to active.
       const next = action === "disable" ? "disabled" : target.passwordHash ? "active" : "invited";
-      await store.updateUser(target.id, { status: next, failedAttempts: 0, lockedUntil: null });
+      await store.updateUser(target.id, { status: next });
       if (action === "disable") {
         await store.revokeTokens(target.id, "session");
         await store.revokeTokens(target.id, "code");
