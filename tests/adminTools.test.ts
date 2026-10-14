@@ -13,6 +13,18 @@ describe("admin tools in Production", () => {
     expect(adminToolsOff({ VERCEL_ENV: "production", MAIZZ_ADMIN_TOOLS: " on " })).toBe(false);
     expect(adminToolsOff({ VERCEL_ENV: "preview" })).toBe(false);
     expect(adminToolsOff({})).toBe(false);
+    expect(adminToolsOff({ VERCEL_ENV: "preview", PAYSTACK_SECRET_KEY: "sk_test_abc" })).toBe(false);
+  });
+
+  it("stays off for a live key or the live database, in any environment, even with the override", () => {
+    const live = "sk_live_" + "x".repeat(20);
+    for (const VERCEL_ENV of ["preview", "development", "production", undefined]) {
+      expect(adminToolsOff({ VERCEL_ENV, PAYSTACK_SECRET_KEY: live })).toBe(true);
+      expect(adminToolsOff({ VERCEL_ENV, PAYSTACK_SECRET_KEY: live, MAIZZ_ADMIN_TOOLS: "on" })).toBe(true);
+      expect(adminToolsOff({ VERCEL_ENV, MAIZZ_LIVE_DATABASE: "yes" })).toBe(true);
+      expect(adminToolsOff({ VERCEL_ENV, MAIZZ_LIVE_DATABASE: " YES ", MAIZZ_ADMIN_TOOLS: "on" })).toBe(true);
+    }
+    expect(adminToolsOff({ VERCEL_ENV: "preview", MAIZZ_LIVE_DATABASE: "no" })).toBe(false);
   });
 
   it("answer 404 in Production even with the right token", async () => {

@@ -3,8 +3,8 @@ import Link from "next/link";
 import { netPesewas, summarise } from "@/lib/churchData";
 import { longDate, typeLabel } from "@/lib/format";
 import { formatCedis } from "@/lib/money";
+import { publicBaseUrl } from "@/lib/config";
 import { requireChurchSession } from "@/lib/staffSession";
-import { headers } from "next/headers";
 import CopyButton from "./CopyButton";
 
 export const dynamic = "force-dynamic";
@@ -15,8 +15,8 @@ export default async function Overview() {
   const now = Date.now();
   const gifts = await data.listPaidGifts(church.id, { limit: 5000 });
   const s = summarise(gifts, now);
-  const host = (await headers()).get("host") ?? "";
-  const link = `${process.env.MAIZZ_PUBLIC_URL?.replace(/\/+$/, "") ?? `https://${host}`}/give/${church.slug}`;
+  const base = publicBaseUrl(process.env);
+  const link = base ? `${base}/give/${church.slug}` : null;
   const max = Math.max(1, ...s.days.map((d) => d.pesewas));
   const typeMax = Math.max(1, ...s.byType.map((t) => t.pesewas));
   const latest = gifts.slice(0, 5);
@@ -40,7 +40,7 @@ export default async function Overview() {
           <img src="/brand/maizz-mark-ink.png" alt="" width={48} height={50} />
           <h2>No gifts yet</h2>
           <p>Gifts appear here within a minute of being paid. Share your link at the next service to get started.</p>
-          <div className="dash-link"><code>{link}</code><CopyButton text={link} /></div>
+          {link ? <div className="dash-link"><code>{link}</code><CopyButton text={link} /></div> : <p className="dash-muted">The public web address is not set yet, so the link cannot be shown. Ask Maizz to set it.</p>}
           <Link className="dash-btn ghost" href="/church/share">Open the printable share card</Link>
         </section>
       ) : (

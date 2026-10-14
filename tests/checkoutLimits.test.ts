@@ -48,7 +48,12 @@ describe("rate secret", () => {
   it("uses RATE_LIMIT_SECRET when it is long enough", () => {
     expect(rateSecret(ENV)).toBe(ENV.RATE_LIMIT_SECRET);
   });
-  it("until it is set, derives a separate key from another long secret, never the secret itself", () => {
+  it("is required on the live site: no borrowed key in Production", () => {
+    expect(() => rateSecret({ VERCEL_ENV: "production", STAFF_SECRET: "s".repeat(40) })).toThrow();
+    expect(rateSecret({ VERCEL_ENV: "production", RATE_LIMIT_SECRET: "r".repeat(40) })).toBe("r".repeat(40));
+    expect(() => rateSecret({ VERCEL_ENV: "preview", STAFF_SECRET: "s".repeat(40) })).not.toThrow();
+  });
+  it("outside Production, until it is set, derives a separate key from another long secret, never the secret itself", () => {
     const k = rateSecret({ STAFF_SECRET: "s".repeat(40) });
     expect(k).not.toContain("s".repeat(40));
     expect(k).toBe(rateSecret({ STAFF_SECRET: "s".repeat(40) }));

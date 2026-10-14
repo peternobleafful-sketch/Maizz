@@ -1,7 +1,7 @@
 import type { AuditLog } from "./audit";
 
 /** Gift starts one source address may make in the window. */
-export const START_LIMIT = { perSource: 8, minutes: 10 } as const;
+export const START_LIMIT = { perSource: 60, minutes: 10 } as const;
 /** Gift starts for one phone number in the window, from anywhere. Stops strangers being sent approval prompts. */
 export const PHONE_LIMIT = { perPhone: 3, minutes: 60 } as const;
 

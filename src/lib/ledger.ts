@@ -90,6 +90,8 @@ export interface Ledger {
   /** New churches start as "pending" and cannot receive gifts. Throws if the slug is taken. */
   createChurch(church: { slug: string; name: string }): Promise<ChurchRecord>;
   listChurches(): Promise<ChurchRecord[]>;
+  /** One church by its id, however many churches exist. Null if there is none (or the id is not valid). */
+  getChurchById(id: string): Promise<ChurchRecord | null>;
   setChurchPayout(churchId: string, payout: NewPayout): Promise<void>;
   setChurchStatus(churchId: string, status: ChurchStatus): Promise<void>;
   /** The church's own pause switch. Never changes the church's status. */
@@ -121,6 +123,9 @@ export interface Ledger {
 }
 
 export class LedgerError extends Error {}
+
+/** The database itself refused a refund (more than the gift amount, or the gift was never paid). */
+export class RefundRefusedError extends LedgerError {}
 
 type Rec = Record<string, unknown>;
 
@@ -243,6 +248,13 @@ export function createSupabaseLedger(opts: {
     async hasTestGifts() {
       const res = await request("GET", "gifts?reference=like.mz_test_*&select=id&limit=1");
       return (await rows(res, "test gift check")).length > 0;
+    },
+
+    async getChurchById(id) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+      const res = await request("GET", `churches?id=eq.${id}&select=${CHURCH_COLUMNS}&limit=1`);
+      const found = (await rows(res, "church lookup"))[0];
+      return found === undefined ? null : toChurch(found);
     },
 
     async listChurches() {
@@ -374,6 +386,10 @@ export function createSupabaseLedger(opts: {
       );
       if (res.status === 201) return "added";
       if (await isUniqueViolation(res)) return "duplicate";
+      if (event.status === "refunded" && res.status >= 400 && res.status < 500) {
+        const text = await res.text().catch(() => "");
+        if (text.includes("maizz_refund_exceeds_gift")) throw new RefundRefusedError("The database refused the refund");
+      }
       throw new LedgerError(`Database refused the event (${res.status})`);
     },
 

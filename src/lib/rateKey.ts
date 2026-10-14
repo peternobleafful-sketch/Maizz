@@ -4,12 +4,13 @@ import type { Env } from "./config";
 // Fingerprints used to count attempts. A raw phone number or address is never stored: only a keyed one-way fingerprint.
 
 /**
- * The secret behind the fingerprints. RATE_LIMIT_SECRET (32+ characters) is the proper one.
- * Until it is set, a separate key is derived from another long secret so nothing breaks (the setup check shows FIX).
+ * The secret behind the fingerprints. RATE_LIMIT_SECRET (32+ characters) is required on the live (Production) site:
+ * without it, giving is refused. Elsewhere (local use, Preview) a separate key is derived from another long secret.
  */
 export function rateSecret(env: Env): string {
   const own = env.RATE_LIMIT_SECRET?.trim();
   if (own && own.length >= 32) return own;
+  if (env.VERCEL_ENV === "production") throw new Error("RATE_LIMIT_SECRET is not set");
   const fallback = [env.STAFF_SECRET, env.SETUP_CHECK_TOKEN, env.SUPABASE_SERVICE_ROLE_KEY].map((v) => v?.trim()).find((v) => v && v.length >= 24);
   if (!fallback) throw new Error("RATE_LIMIT_SECRET is not set");
   return createHmac("sha256", fallback).update("maizz-rate-limit-v1").digest("hex");

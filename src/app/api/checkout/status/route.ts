@@ -1,4 +1,6 @@
+import { getAudit } from "@/lib/audit";
 import { giverStatus, REFERENCE_PATTERN } from "@/lib/checkout";
+import { mayAskProvider } from "@/lib/statusPoll";
 import { logError } from "@/lib/log";
 import { getLedger, getPaymentProvider } from "@/lib/payments";
 import { getNotifier } from "@/lib/notifyRuntime";
@@ -20,8 +22,11 @@ export async function GET(req: Request) {
     if (s && s.status === "pending") {
       const gift = await ledger.findGiftByReference(reference);
       if (gift && Date.now() - Date.parse(gift.createdAt) > SETTLE_AFTER_MS) {
-        await settleGift({ ledger, provider: getPaymentProvider(), gift, notify: getNotifier() });
-        s = await ledger.currentStatus(reference);
+        // At most 6 questions to the provider a minute per gift, however often the page asks.
+        if (await mayAskProvider(getAudit(), reference)) {
+          await settleGift({ ledger, provider: getPaymentProvider(), gift, notify: getNotifier() });
+          s = await ledger.currentStatus(reference);
+        }
       }
     }
     return Response.json({ status: giverStatus(s) });

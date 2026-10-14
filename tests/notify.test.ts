@@ -190,3 +190,26 @@ describe("books export", () => {
     expect(csv.split("\r\n")[0]).not.toMatch(/name|phone|email|giver/);
   });
 });
+
+describe("alert limits per gift (C5)", () => {
+  it("sends one alert per kind an hour, but one per gift when a key is given", async () => {
+    const audit = new FakeAudit();
+    const sent: string[] = [];
+    const n = createNotifier({ ledger: new FakeLedger(), audit, mailer: { send: async (m) => void sent.push(m.subject) }, alertTo: "o@m.test" });
+    await n.alert("odd", "A", ["x"]);
+    await n.alert("odd", "B", ["x"]);
+    expect(sent).toEqual(["[Maizz alert] A"]);
+    await n.alert("amount_mismatch", "G1", ["x"], "mz_one_11111");
+    await n.alert("amount_mismatch", "G1 again", ["x"], "mz_one_11111");
+    await n.alert("amount_mismatch", "G2", ["x"], "mz_two_22222");
+    expect(sent).toEqual(["[Maizz alert] A", "[Maizz alert] G1", "[Maizz alert] G2"]);
+    expect(audit.actions().every((a) => a.length <= 80)).toBe(true);
+  });
+
+  it("keeps long keys within the audit column", async () => {
+    const audit = new FakeAudit();
+    const n = createNotifier({ ledger: new FakeLedger(), audit, mailer: { send: async () => undefined }, alertTo: "o@m.test" });
+    await n.alert("large_gift", "G", ["x"], "r".repeat(100));
+    expect(audit.entries[0]!.action.length).toBeLessThanOrEqual(80);
+  });
+});

@@ -1,11 +1,13 @@
 import { getAudit } from "@/lib/audit";
 import { freeSlug } from "@/lib/churchAdmin";
+import { PUBLIC_URL_MESSAGE, publicBaseUrl } from "@/lib/config";
 import { logError } from "@/lib/log";
 import { getOwnerData } from "@/lib/ownerRuntime";
 import { getLedger } from "@/lib/payments";
 import { StaffError } from "@/lib/staff";
 import { readJson, sameSite, sourceOf } from "@/lib/staffRoutes";
 import { getStaffService, OWNER_COOKIE, readCookie } from "@/lib/staffRuntime";
+
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +45,8 @@ export async function POST(req: Request) {
     }
 
     // Accept. Only one click can win, so a double click cannot make two churches.
+    const baseUrl = publicBaseUrl(process.env);
+    if (!baseUrl) return NO(503, PUBLIC_URL_MESSAGE);
     const mailer = getStaffService(process.env, { area: "church" });
     if (!(await data.claimApplication(app.id, "accepted"))) return NO(409, "That application was already dealt with.");
     await audit.record({ actor: `owner:${me.id}`, action: "owner.application_accept", target: app.id, outcome: "ok", sourceKey: source });
@@ -60,7 +64,6 @@ export async function POST(req: Request) {
       return NO(502, "Could not add the church. The application is back in the list. Try again, or add it under Churches.");
     }
 
-    const baseUrl = process.env.MAIZZ_PUBLIC_URL?.trim() || new URL(req.url).origin;
     try {
       await mailer.invite({
         churchId: church.id,

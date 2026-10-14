@@ -36,6 +36,27 @@ export function requirePaystackSecret(env: Env): string {
   }
 }
 
+export const PUBLIC_URL_MESSAGE = "The public web address is not set (MAIZZ_PUBLIC_URL in Vercel), so no email links can be made. Nothing was sent.";
+
+/**
+ * The address links in emails and QR codes point to. Only MAIZZ_PUBLIC_URL is trusted, never the address a request came from
+ * (a forged Host header could otherwise put an attacker's address into a reset or invite email). Null when not set or not valid.
+ */
+export function publicBaseUrl(env: Env): string | null {
+  const raw = env.MAIZZ_PUBLIC_URL?.trim().replace(/\/+$/, "");
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    const local = u.hostname === "localhost" || u.hostname === "127.0.0.1";
+    if (!(u.protocol === "https:" || (local && u.protocol === "http:"))) return null;
+    if (u.pathname !== "/" && u.pathname !== "") return null;
+    if (u.search || u.hash || u.username || u.password) return null;
+    return u.origin;
+  } catch {
+    return null;
+  }
+}
+
 export function requireSupabase(env: Env): { url: string; serviceKey: string } {
   const url = env.SUPABASE_URL?.trim().replace(/\/+$/, "");
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY?.trim();

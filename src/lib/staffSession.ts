@@ -35,7 +35,7 @@ const loadChurchSession = cache(async (): Promise<Signed> => {
     user = null;
   }
   if (!user) redirect("/church/sign-in");
-  const church = (await getLedger().listChurches()).find((c) => c.id === user.churchId);
+  const church = await getLedger().getChurchById(user.churchId);
   if (!church) redirect("/church/sign-in");
   const { url, serviceKey } = requireSupabase(process.env);
   return { user, church, data: createSupabaseChurchData({ url, serviceKey }) };

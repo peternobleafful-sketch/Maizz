@@ -2,9 +2,11 @@ import { getAudit } from "@/lib/audit";
 import { ROLES, StaffError, type Role } from "@/lib/staff";
 import { getStaffService, readCookie } from "@/lib/staffRuntime";
 import { createSupabaseStaffStore } from "@/lib/staffStore";
-import { requireSupabase } from "@/lib/config";
+import { PUBLIC_URL_MESSAGE, publicBaseUrl, requireSupabase } from "@/lib/config";
 import { readJson, sameSite, sourceOf } from "@/lib/staffRoutes";
 import { getLedger } from "@/lib/payments";
+import { getNotifier } from "@/lib/notifyRuntime";
+import { removalDecision } from "@/lib/teamRules";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,17 +32,29 @@ export async function POST(req: Request) {
 
   const { url, serviceKey } = requireSupabase(process.env);
   const store = createSupabaseStaffStore({ url, serviceKey });
-  const church = (await getLedger().listChurches()).find((c) => c.id === me.churchId);
+  const church = await getLedger().getChurchById(me.churchId);
   if (!church) return NO(403, "Not allowed");
-  const baseUrl = process.env.MAIZZ_PUBLIC_URL?.trim() || new URL(req.url).origin;
+  const baseUrl = publicBaseUrl(process.env);
+  if (!baseUrl) return NO(503, PUBLIC_URL_MESSAGE);
   const audit = getAudit();
   const source = sourceOf(req);
+  // The record is written BEFORE the change, and if the audit log is down nothing changes (it fails closed).
+  const record = async (action: string, target: string, outcome: "ok" | "denied" = "ok"): Promise<boolean> => {
+    try {
+      await audit.record({ actor: `staff:${me.id}`, action, target, outcome, sourceKey: source });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const AUDIT_DOWN = "The audit log is not available, so nothing was changed. Try again in a minute.";
 
   try {
     const action = body.action;
     if (action === "invite") {
       const role = ROLES.find((r) => r === body.role) as Role | undefined;
       if (!role) return NO(400, "Choose a role.");
+      if (!(await record("staff.team_invite", church.id))) return NO(503, AUDIT_DOWN);
       const user = await service.invite({
         churchId: church.id,
         churchName: church.name,
@@ -49,7 +63,6 @@ export async function POST(req: Request) {
         role,
         baseUrl,
       });
-      await audit.record({ actor: `staff:${me.id}`, action: "staff.team_invite", target: user.id, outcome: "ok", sourceKey: source });
       return Response.json({ message: `Invite emailed to ${user.email}.` });
     }
 
@@ -60,13 +73,21 @@ export async function POST(req: Request) {
     if (target.id === me.id) return NO(400, "You cannot change your own access.");
 
     if (action === "resend") {
+      if (!(await record("staff.team_resend", target.id))) return NO(503, AUDIT_DOWN);
       await service.resendInvite({ userId: target.id, churchName: church.name, baseUrl });
-      await audit.record({ actor: `staff:${me.id}`, action: "staff.team_resend", target: target.id, outcome: "ok", sourceKey: source });
       return Response.json({ message: "A new invite email was sent." });
     }
     if (action === "disable" || action === "enable") {
       if (action === "enable" && target.status !== "disabled") return NO(400, "That person is not removed.");
       if (action === "disable" && target.status === "disabled") return NO(400, "That person is already removed.");
+      if (action === "disable" && target.role === "owner") {
+        const verdict = removalDecision(await store.listUsers(church.id), target.id);
+        if (verdict === "last_other_owner") {
+          await record("staff.team_disable_refused", target.id, "denied");
+          return NO(400, "A church must keep at least two active owners. To remove this owner, ask Maizz.");
+        }
+      }
+      if (!(await record(`staff.team_${action}`, target.id))) return NO(503, AUDIT_DOWN);
       // A person who never set a password goes back to "invited", never straight to active.
       const next = action === "disable" ? "disabled" : target.passwordHash ? "active" : "invited";
       await store.updateUser(target.id, { status: next, failedAttempts: 0, lockedUntil: null });
@@ -74,7 +95,12 @@ export async function POST(req: Request) {
         await store.revokeTokens(target.id, "session");
         await store.revokeTokens(target.id, "code");
       }
-      await audit.record({ actor: `staff:${me.id}`, action: `staff.team_${action}`, target: target.id, outcome: "ok", sourceKey: source });
+      if (action === "disable" && target.role === "owner") {
+        await getNotifier().alert("church_owner_removed", "A church owner was removed", [
+          `An owner of ${church.name} was removed by another owner of that church.`,
+          "If the church did not expect this, suspend the church in the owner dashboard and check the audit log.",
+        ], target.id);
+      }
       return Response.json({ message: action === "disable" ? "Access removed. They are signed out." : "Access restored." });
     }
     return NO(400, "Unknown action.");

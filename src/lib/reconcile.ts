@@ -58,14 +58,23 @@ export async function settleGift(args: {
         await notify.alert("amount_mismatch", "A payment did not match its gift amount", [
           `Gift reference: ${gift.reference}`,
           "Paystack reports a different amount than the gift. It was NOT recorded as paid. Check it in the Paystack dashboard.",
-        ]);
+        ], gift.reference);
         return "mismatch";
+      }
+      // Without the provider's transaction id this check cannot share an event id with the payment notice, so the payment
+      // could be recorded twice (and the receipt sent twice). Leave it to the notice; say so in the audit log.
+      if (!idPart) {
+        logError("settle.paid_without_transaction_id");
+        await audit
+          ?.record({ actor: "reconcile", action: "reconcile.paid_without_id", outcome: "failed", target: gift.reference })
+          .catch(() => logError("audit.write_failed", { action: "reconcile.paid_without_id" }));
+        return "still_pending";
       }
       // Same id the payment notice uses, so a notice and this check can never both record it.
       const added = await ledger.addEvent({
         giftId: gift.id,
         status: "succeeded",
-        providerEventId: idPart ? `${provider.name}:charge.success:${idPart}` : undefined,
+        providerEventId: `${provider.name}:charge.success:${idPart}`,
         detail: { provider: provider.name, source: "verify" },
       });
       if (added === "added") await notify.paid(gift);

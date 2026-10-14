@@ -42,3 +42,7 @@ Checkout stops by itself. Do not delete anything by hand (the ledger is append-o
 ## Rolling back
 
 Point the Production variables back at the test project and the test key. Nothing in the live project is changed or deleted by doing this.
+
+## Keeping test builds away from the live database
+
+Set `MAIZZ_LIVE_DATABASE=yes` in **every** Vercel environment that holds the live Supabase settings (Production, and Preview or Development if the live settings were ever ticked for them). With it set, the old admin tools and the setup page answer 404 in that environment, and the override `MAIZZ_ADMIN_TOOLS=on` does nothing. They also stay off whenever the Paystack key is a live key. The test Supabase project must never have this setting.

@@ -27,7 +27,7 @@ export async function POST(req: Request) {
 
   try {
     const ledger = getLedger();
-    const church = (await ledger.listChurches()).find((c) => c.id === me.churchId);
+    const church = await ledger.getChurchById(me.churchId);
     if (!church) return NO(403, "Not allowed");
     if (church.status !== "active") return NO(400, "Your giving page is not open, so there is nothing to pause.");
     if (church.paused === body.paused) return Response.json({ paused: church.paused });

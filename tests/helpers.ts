@@ -84,6 +84,10 @@ export class FakeLedger implements Ledger {
     return this.gifts.some((g) => g.reference.startsWith("mz_test_"));
   }
 
+  async getChurchById(id: string): Promise<ChurchRecord | null> {
+    return [...this.churches.values()].find((c) => c.id === id) ?? null;
+  }
+
   async listChurches(): Promise<ChurchRecord[]> {
     return [...this.churches.values()];
   }

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { RefundRefusedError } from "../src/lib/ledger";
 import { createPaystackProvider } from "../src/lib/payments/paystack";
 import { processWebhook } from "../src/lib/payments/webhookHandler";
 import { FakeAudit, FakeLedger, mockFetch, sign } from "./helpers";
@@ -165,6 +166,18 @@ describe("refund limits", () => {
     expect(res.body.result).toBe("refund_amount_invalid_not_recorded");
     expect(ledger.events).toHaveLength(0);
     expect(audit.actions()).toContain("webhook.refund_invalid");
+  });
+
+  it("treats a refusal by the database's own refund rule as 'not recorded', with a record and no error (C2)", async () => {
+    await send(success());
+    ledger.addEvent = async (e) => {
+      if (e.status === "refunded") throw new RefundRefusedError("refused");
+      return "added";
+    };
+    const res = await refund(75, 1_000);
+    expect(res.status).toBe(200);
+    expect(res.body.result).toBe("refund_amount_invalid_not_recorded");
+    expect(audit.entries.at(-1)).toMatchObject({ action: "webhook.refund_invalid", outcome: "denied" });
   });
 
   it("refuses a refund that would give back the fee (fees are non-refundable)", async () => {

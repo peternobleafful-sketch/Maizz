@@ -1,4 +1,4 @@
-import { classifyPaystackKey, type Env } from "./config";
+import { classifyPaystackKey, publicBaseUrl, type Env } from "./config";
 
 // Tests each Maizz setting and reports pass or fix. It never returns any key or secret value.
 
@@ -281,7 +281,16 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
     rateOk,
     rateOk
       ? "RATE_LIMIT_SECRET is set."
-      : "Add RATE_LIMIT_SECRET in Vercel (Production): a long random string, at least 32 characters. Until then a key is borrowed from another secret.",
+      : "Add RATE_LIMIT_SECRET in Vercel (Production): a long random string, at least 32 characters. Without it the giving page refuses gifts on the live site.",
+  );
+  const publicOk = publicBaseUrl(env) !== null;
+  add(
+    "public_url",
+    "Public web address is set",
+    publicOk,
+    publicOk
+      ? "Links in emails and QR codes use MAIZZ_PUBLIC_URL."
+      : "Add MAIZZ_PUBLIC_URL in Vercel (Production), for example https://maizz-nu.vercel.app (no slash, no path). Without it no invite or reset email can be sent and the share card cannot be made.",
   );
   const alertOk = Boolean(env.ALERT_EMAIL?.trim().includes("@")) && Boolean(env.RESEND_API_KEY?.trim() && env.MAIZZ_FROM_EMAIL?.trim());
   add(

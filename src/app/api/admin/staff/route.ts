@@ -2,7 +2,7 @@ import { openAdminRoute } from "@/lib/adminAuth";
 import { ROLES, StaffError, type Role } from "@/lib/staff";
 import { getStaffService } from "@/lib/staffRuntime";
 import { createSupabaseStaffStore } from "@/lib/staffStore";
-import { requireSupabase } from "@/lib/config";
+import { PUBLIC_URL_MESSAGE, publicBaseUrl, requireSupabase } from "@/lib/config";
 import { getLedger } from "@/lib/payments";
 import { readJson } from "@/lib/staffRoutes";
 
@@ -22,7 +22,8 @@ export async function POST(req: Request) {
   try {
     const church = await getLedger().findChurch(slug);
     if (!church) return Response.json({ error: "That church was not found." }, { status: 404 });
-    const baseUrl = process.env.MAIZZ_PUBLIC_URL?.trim() || new URL(req.url).origin;
+    const baseUrl = publicBaseUrl(process.env);
+    if (!baseUrl) return Response.json({ error: PUBLIC_URL_MESSAGE }, { status: 503 });
 
     if (action === "list") {
       const { url, serviceKey } = requireSupabase(process.env);

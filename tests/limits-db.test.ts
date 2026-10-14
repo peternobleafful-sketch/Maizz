@@ -174,3 +174,44 @@ describe("0010: maizz_clean_up removes old personal details and nothing else", (
     await expect(db.query("select maizz_clean_up(30, null)")).rejects.toThrow();
   });
 });
+
+describe("0011: refunds can never add up to more than the gift amount", () => {
+  const paidGift = async (amount = 10_000) => {
+    const ref = `mz_test_${Math.random().toString(36).slice(2, 12)}`;
+    const id = (await db.query<{ id: string }>("insert into gifts (reference, church_id, gift_type, amount_pesewas, fee_pesewas, total_pesewas) values ($1, $2, 'tithe', $3, 301, $4) returning id", [ref, churchId, amount, amount + 301])).rows[0]!.id;
+    await db.query("insert into gift_events (gift_id, status) values ($1, 'succeeded')", [id]);
+    return id;
+  };
+  const refund = (id: string, amount: number) => db.query("insert into gift_events (gift_id, status, amount_pesewas) values ($1, 'refunded', $2)", [id, amount]);
+
+  it("accepts refunds up to the gift amount, then refuses more", async () => {
+    const id = await paidGift();
+    await refund(id, 4_000);
+    await refund(id, 6_000);
+    await expect(refund(id, 1)).rejects.toThrow(/maizz_refund_exceeds_gift/);
+  });
+
+  it("refuses a refund above the gift amount at once, including the fee", async () => {
+    const id = await paidGift();
+    await expect(refund(id, 10_301)).rejects.toThrow(/maizz_refund_exceeds_gift/);
+  });
+
+  it("refuses a refund on a gift that was never paid", async () => {
+    const ref = `mz_test_${Math.random().toString(36).slice(2, 12)}`;
+    const id = (await db.query<{ id: string }>("insert into gifts (reference, church_id, gift_type, amount_pesewas, fee_pesewas, total_pesewas) values ($1, $2, 'tithe', 5000, 150, 5150) returning id", [ref, churchId])).rows[0]!.id;
+    await expect(refund(id, 100)).rejects.toThrow(/maizz_refund_exceeds_gift/);
+  });
+
+  it("lets only enough of 20 simultaneous refunds through", async () => {
+    const id = await paidGift(10_000);
+    const results = await Promise.allSettled(Array.from({ length: 20 }, () => refund(id, 1_000)));
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(10);
+    const total = (await db.query<{ n: string }>("select sum(amount_pesewas)::text as n from gift_events where gift_id = $1 and status = 'refunded'", [id])).rows[0]!.n;
+    expect(total).toBe("10000");
+  });
+
+  it("does not disturb other events", async () => {
+    const id = await paidGift();
+    await db.query("insert into gift_events (gift_id, status) values ($1, 'pending')", [id]);
+  });
+});

@@ -263,3 +263,14 @@ describe("gifts closed too early (abandoned or failed) in the daily check", () =
     expect(s.latePaymentsRecovered).toBe(0);
   });
 });
+
+describe("a verified payment without a provider transaction id (C4)", () => {
+  it("is not recorded by the check, so it cannot be recorded twice; it is noted for the notice to settle", async () => {
+    const g = await gift("mz_jjjjjjjj", 30);
+    answers.set(g.reference, answer(g.reference, { providerTransactionId: undefined }));
+    const out = await settleGift({ ledger, provider: fakeProvider(), audit, gift: g, now: clock });
+    expect(out).toBe("still_pending");
+    expect((await ledger.currentStatus(g.reference))!.wasPaid).toBe(false);
+    expect(audit.actions()).toContain("reconcile.paid_without_id");
+  });
+});

@@ -1,5 +1,5 @@
 import type { AuditEntry, AuditLog } from "../audit";
-import type { Ledger } from "../ledger";
+import { RefundRefusedError, type Ledger } from "../ledger";
 import { NO_NOTIFIER, type Notifier } from "../notify";
 import { log, logError } from "../log";
 import {
@@ -118,7 +118,7 @@ export async function processWebhook(args: {
         await notify.alert("amount_mismatch", "A payment did not match its gift amount", [
           `Gift reference: ${gift.reference}`,
           "A payment notice arrived for a different amount than the gift. It was NOT recorded as paid. Check it in the Paystack dashboard.",
-        ]);
+        ], gift.reference);
         return { status: 200, body: { ok: true, result: "amount_mismatch_not_recorded" } };
       }
       const outcome = await ledger.addEvent({
@@ -176,13 +176,31 @@ export async function processWebhook(args: {
       });
       return { status: 200, body: { ok: true, result: "refund_amount_invalid_not_recorded" } };
     }
-    const outcome = await ledger.addEvent({
-      giftId: gift.id,
-      status: "refunded",
-      amountPesewas: refunded,
-      providerEventId: event.providerEventId,
-      detail: { provider: provider.name, source: "webhook" },
-    });
+    let outcome: "added" | "duplicate";
+    try {
+      outcome = await ledger.addEvent({
+        giftId: gift.id,
+        status: "refunded",
+        amountPesewas: refunded,
+        providerEventId: event.providerEventId,
+        detail: { provider: provider.name, source: "webhook" },
+      });
+    } catch (err) {
+      // The database's own refund rule said no (for example two notices arrived at the same instant): not recorded.
+      if (!(err instanceof RefundRefusedError)) throw err;
+      logError("webhook.refund_refused_by_database", { giftId: gift.id });
+      await note({
+        action: "webhook.refund_invalid",
+        outcome: "denied",
+        target: gift.reference,
+        detail: { provider: provider.name, refunded_pesewas: refunded, gift_pesewas: gift.amountPesewas, refused_by: "database" },
+      });
+      await notify.alert("refund_invalid", "A refund notice was refused", [
+        `Gift reference: ${gift.reference}`,
+        "The database refused a refund notice because the refunds would add up to more than the gift amount. It was not recorded. Check it in the Paystack dashboard.",
+      ]);
+      return { status: 200, body: { ok: true, result: "refund_amount_invalid_not_recorded" } };
+    }
     log("webhook.recorded", { giftId: gift.id, status: "refunded", outcome });
     return { status: 200, body: { ok: true, result: outcome } };
   } catch (err) {

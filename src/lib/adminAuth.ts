@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { getAudit, sourceKeyFor, type AuditLog } from "./audit";
-import type { Env } from "./config";
+import { classifyPaystackKey, type Env } from "./config";
 import { logError } from "./log";
 
 export const ADMIN_LIMITS = {
@@ -14,11 +14,16 @@ export const ADMIN_LIMITS = {
 const MIN_TOKEN_LENGTH = 24;
 
 /**
- * The private admin tools (the setup page and /api/admin/*) are switched off in Production: they answer 404.
- * Set MAIZZ_ADMIN_TOOLS=on in Vercel to bring them back for a short while. Preview and local use are not affected.
+ * The private admin tools (the setup page and /api/admin/*) answer 404 whenever anything suggests real money or the live database:
+ *  - the site is the Production site (unless MAIZZ_ADMIN_TOOLS=on is set for a short while), or
+ *  - the Paystack key is a live key, or
+ *  - MAIZZ_LIVE_DATABASE=yes is set (put it in every Vercel environment that can reach the live database, Preview included).
+ * The last two cannot be overridden, so a test (Preview) build pointed at the live database can never use these tools.
  * The daily-check addresses (/api/cron/*) are never switched off by this.
  */
 export function adminToolsOff(env: Env): boolean {
+  if (classifyPaystackKey(env.PAYSTACK_SECRET_KEY) === "live") return true;
+  if (env.MAIZZ_LIVE_DATABASE?.trim().toLowerCase() === "yes") return true;
   return env.VERCEL_ENV === "production" && env.MAIZZ_ADMIN_TOOLS?.trim() !== "on";
 }
 

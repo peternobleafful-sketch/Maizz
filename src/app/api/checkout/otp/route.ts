@@ -7,6 +7,10 @@ import { getLedger, getPaymentProvider } from "@/lib/payments";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// A whole church can share one Wi-Fi address, so the address limit is high; the limit per gift is what stops code guessing.
+const OTP_LIMIT_PER_SOURCE = 40;
+const OTP_LIMIT_PER_GIFT = 10;
+
 /** Public. Sends the code a giver received (some networks ask for one). Limited per source. */
 export async function POST(req: Request) {
   const text = await req.text();
@@ -25,7 +29,8 @@ export async function POST(req: Request) {
     const audit = getAudit();
     const source = sourceKeyFor(req, rateSecret(process.env));
     const tries = await audit.hit({ action: "checkout.code", sourceKey: source, minutes: 10, actor: "giver", target: reference });
-    if (tries > 10) {
+    const forGift = await audit.hit({ action: "checkout.code_gift", sourceKey: reference.slice(0, 64), minutes: 10, actor: "giver" });
+    if (tries > OTP_LIMIT_PER_SOURCE || forGift > OTP_LIMIT_PER_GIFT) {
       return Response.json({ error: "Too many attempts. Please wait a few minutes and try again." }, { status: 429, headers: { "Retry-After": "600" } });
     }
 

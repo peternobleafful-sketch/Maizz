@@ -1,5 +1,5 @@
 import { openAdminRoute } from "@/lib/adminAuth";
-import { requireSupabase } from "@/lib/config";
+import { PUBLIC_URL_MESSAGE, publicBaseUrl, requireSupabase } from "@/lib/config";
 import { noActiveOwnerYet } from "@/lib/ownerRuntime";
 import { StaffError } from "@/lib/staff";
 import { readJson } from "@/lib/staffRoutes";
@@ -28,7 +28,8 @@ export async function POST(req: Request) {
   try {
     const { url, serviceKey } = requireSupabase(process.env);
     const store = createSupabaseStaffStore({ url, serviceKey, area: "owner" });
-    const baseUrl = process.env.MAIZZ_PUBLIC_URL?.trim() || new URL(req.url).origin;
+    const baseUrl = publicBaseUrl(process.env);
+    if (!baseUrl) return Response.json({ error: PUBLIC_URL_MESSAGE }, { status: 503 });
     const owners = await store.listUsers("platform");
 
     if (action === "list") {

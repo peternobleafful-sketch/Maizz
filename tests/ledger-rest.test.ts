@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSupabaseLedger, LedgerError } from "../src/lib/ledger";
+import { createSupabaseLedger, LedgerError, RefundRefusedError } from "../src/lib/ledger";
 import { mockFetch } from "./helpers";
 
 const URL_ = "https://abcdefghij.supabase.co";
@@ -188,6 +188,16 @@ describe("supabase ledger: church accounts", () => {
     expect(all.map((c) => c.status)).toEqual(["active", "pending"]);
   });
 
+  it("finds one church by id, however many exist, and ignores an id that is not valid", async () => {
+    const id = "11111111-1111-1111-1111-111111111111";
+    const { l, calls } = ledger([{ json: [CHURCH_ROW] }, { json: [] }]);
+    expect((await l.getChurchById(id))?.slug).toBe(CHURCH_ROW.slug);
+    expect(calls[0]!.url).toContain(`churches?id=eq.${id}`);
+    expect(await l.getChurchById(id)).toBeNull();
+    expect(await l.getChurchById("x&select=*")).toBeNull();
+    expect(calls).toHaveLength(2);
+  });
+
   it("refuses a church row with an unknown status", async () => {
     const { l } = ledger([{ json: [{ ...CHURCH_ROW, status: "open" }] }]);
     await expect(l.findChurch("grace")).rejects.toThrow(LedgerError);
@@ -221,5 +231,17 @@ describe("supabase ledger: test gifts", () => {
 
   it("fails loudly rather than saying no when the database does not answer", async () => {
     await expect(ledger([{ status: 500, json: {} }]).l.hasTestGifts()).rejects.toThrow(LedgerError);
+  });
+});
+
+describe("ledger (REST): the database refund rule (C2)", () => {
+  const refund = { giftId: "g1", status: "refunded" as const, amountPesewas: 1000, providerEventId: "p:1" };
+  it("reports a refusal by the database as a refund refusal, and other failures as ordinary errors", async () => {
+    const a = createSupabaseLedger({ url: "https://x.supabase.co", serviceKey: "k", fetchFn: mockFetch([{ status: 400, json: { code: "P0001", message: "maizz_refund_exceeds_gift" } }]).fn });
+    await expect(a.addEvent(refund)).rejects.toBeInstanceOf(RefundRefusedError);
+    const b = createSupabaseLedger({ url: "https://x.supabase.co", serviceKey: "k", fetchFn: mockFetch([{ status: 400, json: { message: "something else" } }]).fn });
+    const err = await b.addEvent(refund).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LedgerError);
+    expect(err).not.toBeInstanceOf(RefundRefusedError);
   });
 });

@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { STAFF_LIMITS, type Area } from "./staff";
 import { cookieHeader, cookieNameFor, getStaffService, readCookie } from "./staffRuntime";
+import { publicBaseUrl } from "./config";
 import { readJson, sameSite, setupProblem, sourceOf } from "./staffRoutes";
 
 // The sign-in steps, once, for both doors: church staff (/api/staff/*) and the Maizz owner (/api/owner/*).
@@ -76,9 +77,11 @@ export function staffHandlers(area: Area) {
       // The answer goes back at once and the work (and the email) happens afterwards, so the time taken
       // never shows whether an email has an account.
       const source = sourceOf(req);
-      const baseUrl = process.env.MAIZZ_PUBLIC_URL?.trim() || new URL(req.url).origin;
+      const baseUrl = publicBaseUrl(process.env);
       after(async () => {
         try {
+          // Without the public address no link can be made; the person is told nothing different either way.
+          if (!baseUrl) throw new Error("MAIZZ_PUBLIC_URL is not set");
           await getStaffService(process.env, { area }).requestReset(body.email, baseUrl, source);
         } catch {
           // Nothing is said to the person either way.

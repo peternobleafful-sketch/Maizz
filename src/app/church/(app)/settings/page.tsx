@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { headers } from "next/headers";
+import { publicBaseUrl } from "@/lib/config";
 import { requireChurchSession } from "@/lib/staffSession";
 import CopyButton from "../CopyButton";
 import SignOutButton from "../SignOutButton";
@@ -11,8 +11,8 @@ export const metadata: Metadata = { title: "Settings | Maizz", robots: { index: 
 
 export default async function Settings() {
   const { user, church } = await requireChurchSession("owner");
-  const host = (await headers()).get("host") ?? "";
-  const link = `${process.env.MAIZZ_PUBLIC_URL?.replace(/\/+$/, "") ?? `https://${host}`}/give/${church.slug}`;
+  const base = publicBaseUrl(process.env);
+  const link = base ? `${base}/give/${church.slug}` : null;
   return (
     <>
       <div className="dash-head"><h1>Settings</h1><p>{church.name}</p></div>
@@ -22,7 +22,7 @@ export default async function Settings() {
         <dl className="dash-dl">
           <div><dt>Status</dt><dd>{church.status === "active" ? (church.paused ? "Paused by your church" : "Open for giving") : church.status === "pending" ? "Not open yet" : "Paused by Maizz"}</dd></div>
         </dl>
-        <div className="dash-link"><code>{link}</code><CopyButton text={link} /></div>
+        {link ? <div className="dash-link"><code>{link}</code><CopyButton text={link} /></div> : <p className="dash-muted">The public web address is not set yet, so the link cannot be shown. Ask Maizz to set it.</p>}
         <Link className="dash-btn ghost" href="/church/share">Open the printable share card</Link>
       </section>
 

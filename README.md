@@ -127,7 +127,18 @@ Needs migration `0010_atomic_limits_retention.sql` (run it in Supabase before th
 
 - **Attempt limits that hold under floods:** every sign-in, code, reset, step-up, admin-token, checkout, code and application attempt is counted and recorded in one database step.
 - **Sign-in:** a source address gets 30 attempts per 15 minutes; one person from one source gets 8; a person is locked for everyone only after 20 wrong tries. Locked, over the limit, wrong password and unknown email all look the same. Reset requests answer at once.
-- **Giving page:** 8 gift requests per source per 10 minutes, and 3 per phone number per hour (the number is stored only as a keyed hash in the counters).
+- **Giving page:** 60 gift requests per source per 10 minutes (high, so a whole church on one Wi-Fi can give), and 3 per phone number per hour (the number is stored only as a keyed hash in the counters).
 - **Personal details:** the nightly check (03:00) removes the name, phone and email of givers whose gifts were never paid after 30 days (`src/lib/retention.ts`), and the contact details of declined church applications after 90 days. Paid gifts keep their giver. The System page has "Remove a giver's details" (by gift reference) for data requests.
 - **Daily check:** also asks about gifts closed as abandoned or failed in the last 3 days, and records a late payment once, for the exact amount only.
 - **Content-Security-Policy:** report-only for the first week (`middleware.ts`). Reports are listed in the audit log as `csp.report`. Set `MAIZZ_CSP=enforce` to block for real.
+
+## Second review fixes and group C (14 Oct 2026)
+
+Needs migration `0011_refund_total_rule.sql`, and two Vercel settings **before** the code goes live: `RATE_LIMIT_SECRET` (32+ random characters, Sensitive) and `MAIZZ_PUBLIC_URL` (for example `https://maizz-nu.vercel.app`, no slash). Without them giving is refused and no invite or reset email is sent.
+
+- **Admin tools:** stay off whenever the Paystack key is live or `MAIZZ_LIVE_DATABASE=yes` is set (set it in every Vercel environment that can reach the live database).
+- **Limits:** 60 gift starts and 40 codes per address per 10 minutes (church Wi-Fi), 3 gifts per phone per hour, 10 code tries per gift.
+- **Team changes** are recorded before they happen. A church cannot remove an owner if fewer than two active owners would remain; Maizz is emailed whenever an owner is removed.
+- **Refunds:** the database refuses refunds that add up to more than the gift amount.
+- **Alerts** for large gifts and amount mismatches are per gift.
+- **GitHub:** `.github/workflows/tests.yml` runs the checks on every push; `.github/dependabot.yml` checks packages weekly. Turn on branch protection for `main` in GitHub settings so the checks must pass.

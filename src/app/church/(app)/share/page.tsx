@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import QRCode from "qrcode";
+import { publicBaseUrl } from "@/lib/config";
 import { requireChurchSession } from "@/lib/staffSession";
 import PrintButton from "./PrintButton";
 
@@ -9,8 +9,16 @@ export const metadata: Metadata = { title: "Share card | Maizz", robots: { index
 
 export default async function Share() {
   const { church } = await requireChurchSession();
-  const host = (await headers()).get("host") ?? "";
-  const link = `${process.env.MAIZZ_PUBLIC_URL?.replace(/\/+$/, "") ?? `https://${host}`}/give/${church.slug}`;
+  const base = publicBaseUrl(process.env);
+  const link = base ? `${base}/give/${church.slug}` : null;
+  if (!link) {
+    return (
+      <section className="dash-card">
+        <h2>Share card</h2>
+        <p className="dash-muted">The public web address is not set yet, so the card cannot be made. Ask Maizz to set it.</p>
+      </section>
+    );
+  }
   const svg = await QRCode.toString(link, { type: "svg", margin: 1, width: 280, color: { dark: "#0a0a0f", light: "#ffffff" } });
   return (
     <>

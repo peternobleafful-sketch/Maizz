@@ -1,5 +1,5 @@
 import { getAudit } from "@/lib/audit";
-import { requireSupabase } from "@/lib/config";
+import { publicBaseUrl, requireSupabase } from "@/lib/config";
 import { handleOwnerChurches } from "@/lib/ownerChurches";
 import { getLedger, getPaymentProvider } from "@/lib/payments";
 import { sourceOf } from "@/lib/staffRoutes";
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
       provider: getPaymentProvider(),
       cookie: readCookie(req, OWNER_COOKIE),
       source: sourceOf(req),
-      baseUrl: process.env.MAIZZ_PUBLIC_URL?.trim() || new URL(req.url).origin,
+      baseUrl: publicBaseUrl(process.env),
     });
   } catch {
     return Response.json({ error: "Sign-in is not available right now." }, { status: 503 });

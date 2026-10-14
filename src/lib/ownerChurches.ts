@@ -4,6 +4,7 @@ import type { Ledger } from "./ledger";
 import { logError } from "./log";
 import type { PaymentProvider } from "./payments/types";
 import type { StaffService, StaffUser } from "./staff";
+import { PUBLIC_URL_MESSAGE } from "./config";
 import { readJson, sameSite } from "./staffRoutes";
 
 // The church tools of the Maizz owner: add a church, set its payout account, open or suspend it, send an invite again.
@@ -27,7 +28,8 @@ export interface OwnerChurchDeps {
   cookie: string | undefined;
   /** Hashed source address. */
   source: string;
-  baseUrl: string;
+  /** From MAIZZ_PUBLIC_URL; null when not set, in which case no invite link can be made. */
+  baseUrl: string | null;
 }
 
 const NO = (status: number, error: string) => Response.json({ error }, { status });
@@ -68,6 +70,7 @@ export async function handleOwnerChurches(d: OwnerChurchDeps): Promise<Response>
       }
 
       case "create": {
+        if (!d.baseUrl) return NO(503, PUBLIC_URL_MESSAGE);
         if (!(await recordFirst("create"))) return unrecorded();
         const r = await runChurchAction({ ledger: d.ledger, provider: d.provider, action: "create", body });
         return Response.json(r.body, { status: r.status });
@@ -142,6 +145,7 @@ export async function handleOwnerChurches(d: OwnerChurchDeps): Promise<Response>
       }
 
       case "resend": {
+        if (!d.baseUrl) return NO(503, PUBLIC_URL_MESSAGE);
         if (!slug || typeof body.userId !== "string") return NO(400, "Choose a church and a person.");
         const church = await d.ledger.findChurch(slug);
         if (!church) return NO(404, "No such church.");

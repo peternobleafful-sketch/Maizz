@@ -12,7 +12,8 @@ export interface Notifier {
   /** A gift was just recorded as paid for the first time: sends the receipt and checks for a large gift. */
   paid(gift: GiftRecord): Promise<void>;
   /** Tells the owner about something odd. At most one email per kind each hour. Lines must hold no names, phones or secrets. */
-  alert(kind: string, subject: string, lines: string[]): Promise<void>;
+  /** `key` makes the once-an-hour limit apply per item (for example per gift reference) instead of per kind. */
+  alert(kind: string, subject: string, lines: string[], key?: string): Promise<void>;
 }
 
 export const NO_NOTIFIER: Notifier = { paid: async () => undefined, alert: async () => undefined };
@@ -58,19 +59,21 @@ export function createNotifier(deps: {
   const { ledger, audit, mailer, alertTo } = deps;
   const large = deps.largeGiftPesewas ?? DEFAULT_LARGE_GIFT_PESEWAS;
 
-  async function alert(kind: string, subject: string, lines: string[]): Promise<void> {
+  async function alert(kind: string, subject: string, lines: string[], key?: string): Promise<void> {
+    // The audit action column holds at most 80 characters.
+    const slot = key ? `${kind}.${key}`.slice(0, 69) : kind;
     try {
       if (!mailer || !alertTo) {
         logError("alert.not_delivered", { kind });
         return;
       }
-      if ((await audit.countSince(`alert.sent.${kind}`, ALERT_THROTTLE_MINUTES)) > 0) return;
+      if ((await audit.countSince(`alert.sent.${slot}`, ALERT_THROTTLE_MINUTES)) > 0) return;
       await mailer.send({
         to: alertTo,
         subject: `[Maizz alert] ${subject}`,
         text: [...lines, "", "Open the owner dashboard (System and Activity) and check the audit log for details. This kind of alert is sent at most once an hour."].join("\n"),
       });
-      await audit.record({ actor: "alerts", action: `alert.sent.${kind}`, outcome: "ok" });
+      await audit.record({ actor: "alerts", action: `alert.sent.${slot}`, outcome: "ok" });
     } catch {
       logError("alert.send_failed", { kind });
     }
@@ -86,7 +89,7 @@ export function createNotifier(deps: {
             `A gift of ${formatCedis(gift.amountPesewas)} was just paid.`,
             `Reference: ${gift.reference}`,
             `Your alert limit is ${formatCedis(large)}.`,
-          ]);
+          ], gift.reference);
         }
       } catch {
         logError("notify.large_gift_failed");

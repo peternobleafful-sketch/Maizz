@@ -30,7 +30,7 @@ export async function GET(req: Request) {
   const type = typeParam in GIFT_TYPE_LABELS ? typeParam : "";
   const anon = u.searchParams.get("anon") === "1";
 
-  const church = (await getLedger().listChurches()).find((c) => c.id === me.churchId);
+  const church = await getLedger().getChurchById(me.churchId);
   if (!church) return new Response("Not allowed", { status: 403 });
   const { url, serviceKey } = requireSupabase(process.env);
   const gifts = (
