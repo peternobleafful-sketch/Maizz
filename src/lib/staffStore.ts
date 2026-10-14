@@ -7,7 +7,7 @@ const ms = (v: unknown): number | null => (typeof v === "string" ? Date.parse(v)
 
 const USER_COLUMNS = "id,church_id,email,full_name,role,status,password_hash,failed_attempts,locked_until";
 // The Maizz owner's people have no church and no role, only the owner role.
-const OWNER_COLUMNS = "id,email,full_name,status,password_hash,failed_attempts,locked_until";
+const OWNER_COLUMNS = "id,email,full_name,status,password_hash,failed_attempts,locked_until,totp_secret,totp_enabled_at,totp_last_step";
 export const PLATFORM = "platform";
 const TOKEN_COLUMNS = "id,user_id,kind,token_hash,attempts,expires_at,used_at";
 
@@ -25,6 +25,15 @@ function toUser(row: unknown, owner = false): StaffUser {
     passwordHash: typeof row.password_hash === "string" ? row.password_hash : null,
     failedAttempts: typeof row.failed_attempts === "number" ? row.failed_attempts : 0,
     lockedUntil: ms(row.locked_until),
+    ...(owner
+      ? {
+          totp: {
+            secretEnc: typeof row.totp_secret === "string" ? row.totp_secret : null,
+            enabled: typeof row.totp_enabled_at === "string",
+            lastStep: typeof row.totp_last_step === "number" ? row.totp_last_step : Number(row.totp_last_step ?? 0) || 0,
+          },
+        }
+      : {}),
   };
 }
 
@@ -60,7 +69,7 @@ export function createSupabaseStaffStore(opts: {
   const headers: Record<string, string> = { apikey: opts.serviceKey, "Content-Type": "application/json" };
   if (opts.serviceKey.startsWith("eyJ")) headers.Authorization = `Bearer ${opts.serviceKey}`;
 
-  async function request(method: "GET" | "POST" | "PATCH", path: string, body?: unknown, prefer?: string): Promise<Response> {
+  async function request(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown, prefer?: string): Promise<Response> {
     try {
       return await fetchFn(`${base}/${path}`, {
         method,
@@ -157,6 +166,40 @@ export function createSupabaseStaffStore(opts: {
     },
     async incrementFailures(userId) {
       return count(await request("POST", "rpc/maizz_staff_fail", { p_user: userId, p_area: owner ? "owner" : "church" }), "wrong attempt count");
+    },
+    async setTotp(userId, patch) {
+      if (!owner) throw new StaffError("unavailable", "Only the Maizz owner has an authenticator app");
+      const body: Rec = {};
+      if (patch.secretEnc !== undefined) body.totp_secret = patch.secretEnc;
+      if (patch.enabled !== undefined) body.totp_enabled_at = patch.enabled ? new Date().toISOString() : null;
+      const res = await request("PATCH", `owner_users?id=eq.${q(userId)}`, body, "return=representation");
+      if ((await rows(res, "authenticator update")).length !== 1) throw new StaffError("unavailable", "That person was not found");
+    },
+    async claimTotpStep(userId, step) {
+      if (!owner || !Number.isSafeInteger(step) || step < 1) return false;
+      const res = await request("PATCH", `owner_users?id=eq.${q(userId)}&totp_last_step=lt.${step}`, { totp_last_step: step }, "return=representation");
+      return (await rows(res, "authenticator step")).length === 1;
+    },
+    async replaceRecoveryCodes(userId, hashes) {
+      if (!owner) throw new StaffError("unavailable", "Only the Maizz owner has recovery codes");
+      await rows(await request("DELETE", `owner_recovery_codes?user_id=eq.${q(userId)}`, undefined, "return=representation"), "recovery code clear");
+      if (hashes.length > 0) {
+        await rows(await request("POST", "owner_recovery_codes", hashes.map((code_hash) => ({ user_id: userId, code_hash })), "return=representation"), "recovery code save");
+      }
+    },
+    async consumeRecoveryCode(userId, hash) {
+      if (!owner) return false;
+      const res = await request(
+        "PATCH",
+        `owner_recovery_codes?user_id=eq.${q(userId)}&code_hash=eq.${q(hash)}&used_at=is.null`,
+        { used_at: new Date().toISOString() },
+        "return=representation",
+      );
+      return (await rows(res, "recovery code use")).length === 1;
+    },
+    async countRecoveryCodes(userId) {
+      if (!owner) return 0;
+      return (await rows(await request("GET", `owner_recovery_codes?user_id=eq.${q(userId)}&used_at=is.null&select=id&limit=50`), "recovery code count")).length;
     },
     async revokeTokens(userId, kind) {
       await rows(

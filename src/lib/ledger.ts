@@ -47,6 +47,8 @@ export interface ChurchRecord {
   payoutAccountName: string | null;
   /** The church paused its own giving page. Separate from Maizz suspending the church. */
   paused: boolean;
+  /** When the payout account was last CHANGED (not first set), as ISO text. The church cannot reopen for 24 hours after. */
+  payoutChangedAt?: string | null;
 }
 
 export interface NewPayout {
@@ -155,7 +157,7 @@ function toGift(row: unknown): GiftRecord {
 }
 
 const CHURCH_COLUMNS =
-  "id,slug,name,status,provider_subaccount_code,payout_bank_name,payout_account_last4,payout_account_name,giving_paused";
+  "id,slug,name,status,provider_subaccount_code,payout_bank_name,payout_account_last4,payout_account_name,giving_paused,payout_changed_at";
 
 function str(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
@@ -181,6 +183,7 @@ function toChurch(row: unknown): ChurchRecord {
     payoutAccountLast4: str(row.payout_account_last4),
     payoutAccountName: str(row.payout_account_name),
     paused: row.giving_paused === true,
+    payoutChangedAt: str(row.payout_changed_at),
   };
 }
 

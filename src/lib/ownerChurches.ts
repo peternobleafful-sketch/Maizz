@@ -30,6 +30,8 @@ export interface OwnerChurchDeps {
   source: string;
   /** From MAIZZ_PUBLIC_URL; null when not set, in which case no invite link can be made. */
   baseUrl: string | null;
+  /** True with a live payment key: a payout change then needs the authenticator app, not an emailed code. */
+  requireApp?: boolean;
 }
 
 const NO = (status: number, error: string) => Response.json({ error }, { status });
@@ -86,8 +88,17 @@ export async function handleOwnerChurches(d: OwnerChurchDeps): Promise<Response>
 
       case "payout_code": {
         if (!slug) return NO(400, "Choose a church.");
+        if (d.requireApp && !me.totp?.enabled) {
+          return NO(403, "With real money, changing a payout account needs your authenticator app. Set it up first on the System page.");
+        }
         const r = await d.ownerService.startStepUp(d.cookie, d.source);
-        if (r.ok) return Response.json({ challenge: r.challenge, message: "A code was emailed to you. It works once, for 10 minutes." });
+        if (r.ok) {
+          return Response.json({
+            challenge: r.challenge,
+            method: r.method,
+            message: r.method === "app" ? "Enter the current code from your authenticator app." : "A code was emailed to you. It works once, for 10 minutes.",
+          });
+        }
         if (r.reason === "signed_out") return NO(401, "Please sign in again.");
         if (r.reason === "locked") return NO(429, "Too many codes were asked for. Wait 15 minutes and try again.");
         return NO(503, "The code email could not be sent. Check that email sending is set up.");

@@ -1,5 +1,7 @@
 import { createHmac, randomBytes, randomInt, scrypt, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { AuditLog } from "./audit";
+import { decryptSecret, encryptSecret, hashRecoveryCode, newRecoveryCodes, newTotpSecret, normaliseRecoveryCode, otpauthUri, verifyTotp } from "./totp";
 
 // Church sign-in: email and password, then a six-digit code sent to the same email.
 // Passwords are kept only as salted scrypt hashes. Codes, invite links and sessions only as one-way hashes.
@@ -32,6 +34,16 @@ export const STAFF_LIMITS = {
   maxPassword: 200,
 } as const;
 
+/** The owner's authenticator app. Only the Maizz owner can have one; church people have none. */
+export interface TotpState {
+  /** The shared secret, encrypted. Null before enrolment starts. */
+  secretEnc: string | null;
+  /** True once the person has proved they can read a code from the app. */
+  enabled: boolean;
+  /** The newest 30-second step already used. */
+  lastStep: number;
+}
+
 export interface StaffUser {
   id: string;
   churchId: string;
@@ -43,6 +55,7 @@ export interface StaffUser {
   failedAttempts: number;
   /** ms since 1970, or null */
   lockedUntil: number | null;
+  totp?: TotpState;
 }
 
 export interface StaffToken {
@@ -76,6 +89,16 @@ export interface StaffStore {
   incrementFailures(userId: string): Promise<number>;
   /** Marks every unused token of this kind for this person as used. */
   revokeTokens(userId: string, kind: TokenKind): Promise<void>;
+  /** Owner only. Saves the encrypted secret and/or switches the authenticator app on. */
+  setTotp(userId: string, patch: { secretEnc?: string | null; enabled?: boolean }): Promise<void>;
+  /** Owner only. True for the one caller that moves "newest step used" forward to this step (so a code works once). */
+  claimTotpStep(userId: string, step: number): Promise<boolean>;
+  /** Owner only. Replaces all recovery codes with these hashes. */
+  replaceRecoveryCodes(userId: string, hashes: string[]): Promise<void>;
+  /** Owner only. True for the one caller that uses up this recovery code. */
+  consumeRecoveryCode(userId: string, hash: string): Promise<boolean>;
+  /** Owner only. How many recovery codes are still unused. */
+  countRecoveryCodes(userId: string): Promise<number>;
 }
 
 export interface Mailer {
@@ -147,14 +170,14 @@ function same(a: string, b: string): boolean {
 }
 
 export type SignInResult =
-  | { ok: true; challenge: string }
+  | { ok: true; challenge: string; method: "email" | "app" }
   | { ok: false; reason: "wrong" | "locked" | "unavailable" };
 
 export type CodeResult =
   | { ok: true; sessionToken: string; expiresAt: number }
   | { ok: false; reason: "wrong" | "expired" | "locked" | "unavailable" };
 
-export type StepUpStart = { ok: true; challenge: string } | { ok: false; reason: "signed_out" | "locked" | "unavailable" };
+export type StepUpStart = { ok: true; challenge: string; method: "email" | "app" } | { ok: false; reason: "signed_out" | "locked" | "unavailable" };
 export type StepUpResult = { ok: true } | { ok: false; reason: "signed_out" | "wrong" | "expired" | "locked" | "unavailable" };
 
 export interface SessionInfo {
@@ -224,6 +247,23 @@ export function createStaffService(deps: {
     }
   }
 
+  /**
+   * Checks a code from the person's authenticator app (or, when allowed, one of their recovery codes).
+   * A code from the app works once; a recovery code works once. Atomic, so two simultaneous tries cannot both pass.
+   */
+  async function appCodeOk(user: StaffUser, codeRaw: unknown, allowRecovery: boolean): Promise<"ok" | "recovery" | "wrong"> {
+    const secret = user.totp?.secretEnc ? decryptSecret(user.totp.secretEnc, deps.pepper) : null;
+    if (secret) {
+      const step = verifyTotp(secret, codeRaw, now(), user.totp?.lastStep ?? 0);
+      if (step !== null) return (await store.claimTotpStep(user.id, step)) ? "ok" : "wrong";
+    }
+    if (allowRecovery) {
+      const recovery = normaliseRecoveryCode(codeRaw);
+      if (recovery && (await store.consumeRecoveryCode(user.id, hashRecoveryCode(recovery, deps.pepper)))) return "recovery";
+    }
+    return "wrong";
+  }
+
   return {
     /** Owner tool: adds a person and emails them a link to choose a password. */
     async invite(args: { churchId: string; churchName: string; email: string; fullName: string; role: Role; baseUrl: string }) {
@@ -283,6 +323,17 @@ export function createStaffService(deps: {
           return { ok: false, reason: "wrong" };
         }
         await store.revokeTokens(usable.id, "code");
+        if (usable.totp?.enabled) {
+          // The second step is the authenticator app, not the email: nothing is sent, so the inbox alone can never get in.
+          const challenge = await store.createToken({
+            userId: usable.id,
+            kind: "code",
+            tokenHash: h(`app:${usable.id}:${randomUUID()}`),
+            expiresAt: now() + STAFF_LIMITS.codeMinutes * minute,
+          });
+          await record("staff.app_code_asked", "ok", sourceKey, usable.id);
+          return { ok: true, challenge, method: "app" };
+        }
         const code = newCode();
         const challenge = await store.createToken({
           userId: usable.id,
@@ -296,7 +347,7 @@ export function createStaffService(deps: {
           text: `Your Maizz sign-in code is ${code}.\n\nIt works for ${STAFF_LIMITS.codeMinutes} minutes. If you did not try to sign in, ignore this email and ${whoToTell}.\n\nMaizz will never ask you for this code by phone or message.`,
         });
         await record("staff.code_sent", "ok", sourceKey, usable.id);
-        return { ok: true, challenge };
+        return { ok: true, challenge, method: "email" };
       } catch {
         return { ok: false, reason: "unavailable" };
       }
@@ -325,11 +376,27 @@ export function createStaffService(deps: {
           await store.consumeToken(token.id);
           return { ok: false, reason: "expired" };
         }
-        if (!/^\d{6}$/.test(code) || !same(token.tokenHash, h(`${user.id}:${code}`))) {
+        let recoveryUsed = false;
+        if (user.totp?.enabled) {
+          // With the app switched on, only a code from the app (or a recovery code) opens the door. An emailed code is never accepted.
+          const r = await appCodeOk(user, codeRaw, true);
+          if (r === "wrong") {
+            await fail(user, "staff.code_failed", sourceKey);
+            return { ok: false, reason: "wrong" };
+          }
+          recoveryUsed = r === "recovery";
+        } else if (!/^\d{6}$/.test(code) || !same(token.tokenHash, h(`${user.id}:${code}`))) {
           await fail(user, "staff.code_failed", sourceKey);
           return { ok: false, reason: "wrong" };
         }
         if (!(await store.consumeToken(token.id))) return { ok: false, reason: "expired" };
+        if (recoveryUsed) {
+          await record("staff.recovery_code_used", "ok", sourceKey, user.id);
+          await deps.alert?.("owner_recovery_code", "A recovery code was used to sign in to Maizz", [
+            "A one-time recovery code (not the authenticator app) was used to sign in as a Maizz owner.",
+            "If that was you, set up your authenticator app again and make new recovery codes. If not, change the password and check the audit log.",
+          ]);
+        }
         const sessionToken = newToken();
         const expiresAt = now() + STAFF_LIMITS.sessionHours * 60 * minute;
         await store.createToken({ userId: user.id, kind: "session", tokenHash: h(sessionToken), expiresAt });
@@ -391,6 +458,15 @@ export function createStaffService(deps: {
         if (asked > STAFF_LIMITS.stepUpRequests) return { ok: false, reason: "locked" };
         const user = session.user;
         await store.revokeTokens(user.id, "payout");
+        if (user.totp?.enabled) {
+          const challenge = await store.createToken({
+            userId: user.id,
+            kind: "payout",
+            tokenHash: h(`app-payout:${user.id}:${randomUUID()}`),
+            expiresAt: now() + STAFF_LIMITS.codeMinutes * minute,
+          });
+          return { ok: true, challenge, method: "app" };
+        }
         const code = newCode();
         const challenge = await store.createToken({
           userId: user.id,
@@ -403,7 +479,7 @@ export function createStaffService(deps: {
           subject: `Your Maizz code to change a payout account is ${code}`,
           text: `Your Maizz confirmation code is ${code}.\n\nIt is needed to change where a church's gifts are paid out. It works once, for ${STAFF_LIMITS.codeMinutes} minutes. If you did not ask for it, do not use it and change your password.\n\nMaizz will never ask you for this code by phone or message.`,
         });
-        return { ok: true, challenge };
+        return { ok: true, challenge, method: "email" };
       } catch {
         return { ok: false, reason: "unavailable" };
       }
@@ -428,7 +504,13 @@ export function createStaffService(deps: {
           await store.consumeToken(token.id);
           return { ok: false, reason: "expired" };
         }
-        if (!/^\d{6}$/.test(code) || !same(token.tokenHash, h(`payout:${user.id}:${code}`))) {
+        if (user.totp?.enabled) {
+          // The app only: a recovery code is for getting back in, never for moving money.
+          if ((await appCodeOk(user, codeRaw, false)) === "wrong") {
+            await fail(user, "staff.code_failed", sourceKey);
+            return { ok: false, reason: "wrong" };
+          }
+        } else if (!/^\d{6}$/.test(code) || !same(token.tokenHash, h(`payout:${user.id}:${code}`))) {
           await fail(user, "staff.code_failed", sourceKey);
           return { ok: false, reason: "wrong" };
         }
@@ -449,7 +531,7 @@ export function createStaffService(deps: {
           await mailer.send({
             to: u.email,
             subject: `Your ${args.churchName} payout account was changed`,
-            text: `Hello ${u.fullName},\n\nYour payout account was changed to ${args.bankName ? `${args.bankName} ` : ""}•••• ${args.last4 ?? "----"} by Maizz.\n\nIf you did not expect this, reply to this email or contact Maizz straight away.`,
+            text: `Hello ${u.fullName},\n\nYour payout account was changed to ${args.bankName ? `${args.bankName} ` : ""}•••• ${args.last4 ?? "----"} by Maizz.\n\nAs a safety measure your church cannot take gifts again until 24 hours have passed.\n\nIf you did not expect this, reply to this email or contact Maizz straight away.`,
           });
           sent += 1;
         } catch {
@@ -457,6 +539,71 @@ export function createStaffService(deps: {
         }
       }
       return sent;
+    },
+
+    /** Owner only. Whether the app is on, and how many recovery codes are left. */
+    async authenticatorStatus(userId: string): Promise<{ enabled: boolean; pending: boolean; recoveryLeft: number }> {
+      const user = await store.getUser(userId);
+      const enabled = user?.totp?.enabled === true;
+      return { enabled, pending: !enabled && Boolean(user?.totp?.secretEnc), recoveryLeft: enabled ? await store.countRecoveryCodes(userId) : 0 };
+    },
+
+    /** Owner only. Starts setting up the app: makes a new secret (replacing an unfinished one) and returns it once, for the QR code. */
+    async beginAuthenticator(userId: string): Promise<{ ok: true; secret: string; uri: string } | { ok: false; reason: "already" | "unavailable" }> {
+      try {
+        const user = await store.getUser(userId);
+        if (!user || user.status !== "active") return { ok: false, reason: "unavailable" };
+        if (user.totp?.enabled) return { ok: false, reason: "already" };
+        const secret = newTotpSecret();
+        await store.setTotp(user.id, { secretEnc: encryptSecret(secret, deps.pepper), enabled: false });
+        await record("owner.authenticator_started", "ok", undefined, user.id);
+        return { ok: true, secret, uri: otpauthUri(user.email, secret) };
+      } catch {
+        return { ok: false, reason: "unavailable" };
+      }
+    },
+
+    /** Owner only. The person types the first code from the app; if it is right, the app is switched on and recovery codes are made (shown once). */
+    async finishAuthenticator(userId: string, codeRaw: unknown, sourceKey: string): Promise<{ ok: true; recoveryCodes: string[] } | { ok: false; reason: "wrong" | "none" | "locked" | "unavailable" }> {
+      try {
+        if (await sourceOver("staff.code_attempt", sourceKey)) return { ok: false, reason: "locked" };
+        const user = await store.getUser(userId);
+        if (!user || user.totp?.enabled || !user.totp?.secretEnc) return { ok: false, reason: "none" };
+        if (user.lockedUntil && user.lockedUntil > now()) return { ok: false, reason: "locked" };
+        const secret = decryptSecret(user.totp.secretEnc, deps.pepper);
+        const step = secret ? verifyTotp(secret, codeRaw, now(), user.totp.lastStep) : null;
+        if (step === null || !(await store.claimTotpStep(user.id, step))) {
+          await fail(user, "staff.code_failed", sourceKey);
+          return { ok: false, reason: "wrong" };
+        }
+        const codes = newRecoveryCodes();
+        await store.replaceRecoveryCodes(user.id, codes.map((c) => hashRecoveryCode(c, deps.pepper)));
+        await store.setTotp(user.id, { enabled: true });
+        await record("owner.authenticator_on", "ok", sourceKey, user.id);
+        return { ok: true, recoveryCodes: codes };
+      } catch {
+        return { ok: false, reason: "unavailable" };
+      }
+    },
+
+    /** Owner only. Makes a fresh set of recovery codes (the old ones stop working). Needs a current code from the app. */
+    async renewRecoveryCodes(userId: string, codeRaw: unknown, sourceKey: string): Promise<{ ok: true; recoveryCodes: string[] } | { ok: false; reason: "wrong" | "none" | "locked" | "unavailable" }> {
+      try {
+        if (await sourceOver("staff.code_attempt", sourceKey)) return { ok: false, reason: "locked" };
+        const user = await store.getUser(userId);
+        if (!user?.totp?.enabled) return { ok: false, reason: "none" };
+        if (user.lockedUntil && user.lockedUntil > now()) return { ok: false, reason: "locked" };
+        if ((await appCodeOk(user, codeRaw, false)) === "wrong") {
+          await fail(user, "staff.code_failed", sourceKey);
+          return { ok: false, reason: "wrong" };
+        }
+        const codes = newRecoveryCodes();
+        await store.replaceRecoveryCodes(user.id, codes.map((c) => hashRecoveryCode(c, deps.pepper)));
+        await record("owner.recovery_codes_renewed", "ok", sourceKey, user.id);
+        return { ok: true, recoveryCodes: codes };
+      } catch {
+        return { ok: false, reason: "unavailable" };
+      }
     },
 
     async getSession(sessionToken: string | undefined): Promise<SessionInfo | null> {

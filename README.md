@@ -142,3 +142,11 @@ Needs migration `0011_refund_total_rule.sql`, and two Vercel settings **before**
 - **Refunds:** the database refuses refunds that add up to more than the gift amount.
 - **Alerts** for large gifts and amount mismatches are per gift.
 - **GitHub:** `.github/workflows/tests.yml` runs the checks on every push; `.github/dependabot.yml` checks packages weekly. Turn on branch protection for `main` in GitHub settings so the checks must pass.
+
+## Owner authenticator app and payout wait (14 Oct 2026)
+
+Needs migration `0012_owner_authenticator.sql` (run it in Supabase **before** the code goes live: the code reads a new column).
+
+- **Authenticator app:** Owner, System, "Sign-in security". Scan the picture with Google or Microsoft Authenticator, type the first code, then save the eight recovery codes (shown once). From then on sign-in and payout changes use the app, not email.
+- **Payout wait:** when a church's payout account is changed, it cannot be opened for gifts again for 24 hours, and the church's owners are emailed.
+- **Lost phone:** see `docs/INCIDENT_RESPONSE.md`.

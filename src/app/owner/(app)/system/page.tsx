@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getAudit } from "@/lib/audit";
 import { requireOwnerSession } from "@/lib/ownerRuntime";
 import { runSetupChecks } from "@/lib/setupCheck";
+import AuthenticatorCard from "./AuthenticatorCard";
 import SystemTools from "./SystemTools";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ export default async function OwnerSystem() {
           ))}
         </ul>
       </section>
+      <AuthenticatorCard />
       <SystemTools />
       <p className="dash-muted">Reload this page to run the checks again.</p>
     </>

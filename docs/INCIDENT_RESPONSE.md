@@ -68,3 +68,14 @@ Do each in the service's own dashboard, then paste the new value into Vercel (Se
 2. Fix the cause, add a test or an alert so it cannot happen quietly again.
 3. Update this plan.
 4. Tell the independent security reviewer.
+
+
+## The owner lost their phone and their recovery codes
+
+Use a recovery code first (System page, "Sign-in security", then sign in with a recovery code instead of the app code). If there are none left:
+
+1. Open Supabase, SQL Editor, and run (with the owner's real email in place of the example):
+   `update owner_users set totp_secret = null, totp_enabled_at = null where email = 'owner@example.com';`
+2. The database records "owner.authenticator_off" in the audit log by itself.
+3. Sign in with the email code, then set the app up again on the new phone and save the new recovery codes.
+4. Treat it as an incident until you are sure nobody else asked for this: check the audit log for sign-ins you do not recognise.

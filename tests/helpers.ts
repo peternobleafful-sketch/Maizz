@@ -47,6 +47,7 @@ export function makeChurch(over: Partial<ChurchRecord> & { id: string; slug: str
     payoutAccountLast4: null,
     payoutAccountName: null,
     paused: false,
+    payoutChangedAt: null,
     ...over,
   };
 }
@@ -319,6 +320,32 @@ export class FakeStaffStore implements StaffStore {
     const u = this.users.find((x) => x.id === userId)!;
     u.failedAttempts += 1;
     return u.failedAttempts;
+  }
+  recovery = new Map<string, { hash: string; used: boolean }[]>();
+  async setTotp(userId: string, patch: { secretEnc?: string | null; enabled?: boolean }) {
+    const u = this.users.find((x) => x.id === userId)!;
+    u.totp = { secretEnc: u.totp?.secretEnc ?? null, enabled: u.totp?.enabled ?? false, lastStep: u.totp?.lastStep ?? 0 };
+    if (patch.secretEnc !== undefined) u.totp.secretEnc = patch.secretEnc;
+    if (patch.enabled !== undefined) u.totp.enabled = patch.enabled;
+  }
+  async claimTotpStep(userId: string, step: number) {
+    const u = this.users.find((x) => x.id === userId)!;
+    const last = u.totp?.lastStep ?? 0;
+    if (step <= last) return false;
+    u.totp = { secretEnc: u.totp?.secretEnc ?? null, enabled: u.totp?.enabled ?? false, lastStep: step };
+    return true;
+  }
+  async replaceRecoveryCodes(userId: string, hashes: string[]) {
+    this.recovery.set(userId, hashes.map((hash) => ({ hash, used: false })));
+  }
+  async consumeRecoveryCode(userId: string, hash: string) {
+    const c = this.recovery.get(userId)?.find((x) => x.hash === hash && !x.used);
+    if (!c) return false;
+    c.used = true;
+    return true;
+  }
+  async countRecoveryCodes(userId: string) {
+    return this.recovery.get(userId)?.filter((x) => !x.used).length ?? 0;
   }
   async revokeTokens(userId: string, kind: TokenKind) {
     for (const t of this.tokens) if (t.userId === userId && t.kind === kind && t.usedAt === null) t.usedAt = 1;

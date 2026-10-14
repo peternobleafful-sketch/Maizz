@@ -1925,3 +1925,26 @@ body {
 .dash-loading-block.short { height: 72px; width: 70%; }
 @keyframes dash-slide { from { background-position: -40% 0; } to { background-position: 140% 0; } }
 @media (prefers-reduced-motion: reduce) { .dash-loading-bar { animation: none; background: var(--blue); opacity: 0.4; } }
+
+/* Recovery codes shown once after switching on the authenticator app */
+.dash-codes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dash-codes li {
+  background: var(--mist);
+  border-radius: 14px;
+  padding: 14px 16px;
+  text-align: center;
+}
+
+.dash-codes code {
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+}

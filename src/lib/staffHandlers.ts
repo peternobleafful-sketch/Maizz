@@ -26,7 +26,7 @@ export function staffHandlers(area: Area) {
         return setupProblem(err);
       }
       const r = await service.signIn(body.email, body.password, sourceOf(req));
-      if (r.ok) return Response.json({ challenge: r.challenge });
+      if (r.ok) return Response.json({ challenge: r.challenge, method: r.method });
       if (r.reason === "locked") {
         return Response.json({ error: "locked", message: "Too many tries. Wait 15 minutes and try again." }, { status: 429 });
       }
@@ -36,7 +36,7 @@ export function staffHandlers(area: Area) {
       return Response.json({ error: "wrong", message: "That email or password is not right." }, { status: 401 });
     },
 
-    /** Step two: the six-digit code from the email. */
+    /** Step two: the six-digit code (from the email, or from the authenticator app when it is switched on). */
     async code(req: Request): Promise<Response> {
       if (!sameSite(req)) return NOT_ALLOWED();
       const body = await readJson(req);
@@ -61,7 +61,7 @@ export function staffHandlers(area: Area) {
         return Response.json({ error: "expired", message: "That code has expired. Go back and sign in again for a new one." }, { status: 410 });
       }
       if (r.reason === "unavailable") return UNAVAILABLE();
-      return Response.json({ error: "wrong", message: "That code is not right. Check the email and try again." }, { status: 401 });
+      return Response.json({ error: "wrong", message: "That code is not right. Check it and try again." }, { status: 401 });
     },
 
     /** A new person chooses their password from the emailed invite link. */

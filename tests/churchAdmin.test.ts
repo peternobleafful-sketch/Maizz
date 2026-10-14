@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { runChurchAction, showChurch, slugFromName, type ChurchAction } from "../src/lib/churchAdmin";
+import { reopenTime, runChurchAction, showChurch, slugFromName, type ChurchAction } from "../src/lib/churchAdmin";
 import { ProviderError, type PaymentProvider } from "../src/lib/payments/types";
 import { FakeLedger, makeChurch } from "./helpers";
 
@@ -148,5 +148,28 @@ describe("lists", () => {
     expect(JSON.stringify(r.body)).not.toContain("ACCT_");
     expect(r.body.churches).toEqual([showChurch((await ledger.findChurch("t"))!)]);
     expect(((await run("banks")).body.banks as unknown[]).length).toBe(2);
+  });
+});
+
+describe("the safety wait after a payout account is changed", () => {
+  it("works out when the church may reopen, and nothing when there is no wait", () => {
+    const now = Date.UTC(2026, 9, 14, 12, 0, 0);
+    expect(reopenTime(null, now)).toBeNull();
+    expect(reopenTime(undefined, now)).toBeNull();
+    expect(reopenTime(new Date(now - 25 * 3_600_000).toISOString(), now)).toBeNull();
+    expect(reopenTime(new Date(now - 3_600_000).toISOString(), now)).toBe("Thu, 15 Oct 2026 11:00:00 UTC");
+    expect(reopenTime("not a date", now)).toBeNull();
+  });
+
+  it("refuses to open a church whose payout account was changed less than 24 hours ago", async () => {
+    await run("create", { name: "Grace Chapel" });
+    await run("payout", { slug: "grace-chapel", bankCode: "MTN", accountNumber: "0551234987" });
+    (await ledger.findChurch("grace-chapel"))!.payoutChangedAt = new Date(Date.now() - 3_600_000).toISOString();
+    const r = await run("activate", { slug: "grace-chapel", confirmed: true });
+    expect(r.status).toBe(409);
+    expect(JSON.stringify(r.body)).toMatch(/24 hours/);
+    expect((await ledger.findChurch("grace-chapel"))!.status).toBe("pending");
+    (await ledger.findChurch("grace-chapel"))!.payoutChangedAt = new Date(Date.now() - 25 * 3_600_000).toISOString();
+    expect((await run("activate", { slug: "grace-chapel", confirmed: true })).status).toBe(200);
   });
 });

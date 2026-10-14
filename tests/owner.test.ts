@@ -189,3 +189,41 @@ describe("owner sign-in service", () => {
     expect(alerts).toEqual(["owner_locked"]);
   });
 });
+
+describe("owner store (REST): authenticator app", () => {
+  const make = (replies: Parameters<typeof mockFetch>[0], area: "owner" | "church" = "owner") => {
+    const m = mockFetch(replies);
+    return { m, store: createSupabaseStaffStore({ url: "https://x.supabase.co", serviceKey: "sb_secret_abc", fetchFn: m.fn, area }) };
+  };
+  const U = "11111111-1111-1111-1111-111111111111";
+
+  it("reads the app state with the person, and never needs it for church people", async () => {
+    const { store } = make([{ json: [{ id: U, email: "i@m.test", full_name: "I", status: "active", password_hash: "x", failed_attempts: 0, locked_until: null, totp_secret: "ENC", totp_enabled_at: iso(0), totp_last_step: 55 }] }]);
+    expect((await store.getUser(U))!.totp).toEqual({ secretEnc: "ENC", enabled: true, lastStep: 55 });
+    const church = make([{ json: [{ id: U, church_id: "c", email: "i@m.test", full_name: "I", role: "owner", status: "active", password_hash: "x", failed_attempts: 0, locked_until: null }] }], "church");
+    expect((await church.store.getUser(U))!.totp).toBeUndefined();
+    await expect(church.store.setTotp(U, { enabled: true })).rejects.toThrow();
+    expect(await church.store.claimTotpStep(U, 5)).toBe(false);
+  });
+
+  it("moves the used step forward only if it is newer, in one request", async () => {
+    const { m, store } = make([{ json: [{ id: U }] }, { json: [] }]);
+    expect(await store.claimTotpStep(U, 777)).toBe(true);
+    expect(m.calls[0]!.url).toContain(`owner_users?id=eq.${U}&totp_last_step=lt.777`);
+    expect(m.calls[0]!.body).toEqual({ totp_last_step: 777 });
+    expect(await store.claimTotpStep(U, 777)).toBe(false);
+    expect(await store.claimTotpStep(U, -1)).toBe(false);
+  });
+
+  it("uses a recovery code only while unused, and stores hashes", async () => {
+    const hash = "a".repeat(64);
+    const { m, store } = make([{ json: [{ id: "r1" }] }, { json: [] }, { json: [] }, { status: 201, json: [{}, {}] }]);
+    expect(await store.consumeRecoveryCode(U, hash)).toBe(true);
+    expect(m.calls[0]!.url).toContain("owner_recovery_codes");
+    expect(m.calls[0]!.url).toContain("used_at=is.null");
+    expect(await store.consumeRecoveryCode(U, hash)).toBe(false);
+    await store.replaceRecoveryCodes(U, [hash, "b".repeat(64)]);
+    expect(m.calls[2]!.method).toBe("DELETE");
+    expect(m.calls[3]!.body).toEqual([{ user_id: U, code_hash: hash }, { user_id: U, code_hash: "b".repeat(64) }]);
+  });
+});

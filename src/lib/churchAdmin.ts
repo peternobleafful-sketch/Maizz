@@ -52,6 +52,17 @@ export async function freeSlug(ledger: Ledger, name: string): Promise<string> {
 
 const bad = (error: string, status = 400): ChurchReply => ({ status, body: { error } });
 
+/** The wait after a payout account is changed, before the church may take gifts again. The database enforces the same rule. */
+export const PAYOUT_COOLDOWN_HOURS = 24;
+
+/** When the church may reopen, as a readable time, or null if the wait is over (or there was no change). */
+export function reopenTime(changedAt: string | null | undefined, nowMs: number): string | null {
+  if (!changedAt) return null;
+  const until = Date.parse(changedAt) + PAYOUT_COOLDOWN_HOURS * 3_600_000;
+  if (!Number.isFinite(until) || until <= nowMs) return null;
+  return new Date(until).toUTCString().replace(" GMT", " UTC");
+}
+
 function text(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
@@ -109,6 +120,10 @@ export async function runChurchAction(args: {
         if (!church) return bad("No such church.", 404);
         if (church.status === "active") return bad("That church is already active.");
         if (!church.subaccountCode) return bad("Set up the church's payout account first.");
+        const reopen = reopenTime(church.payoutChangedAt, Date.now());
+        if (reopen) {
+          return bad(`The payout account was changed less than 24 hours ago, as a safety wait. This church can be opened after ${reopen}.`, 409);
+        }
         if (body.confirmed !== true) {
           return bad("Confirm that you have checked the church is genuine and that the account name matches the church.");
         }

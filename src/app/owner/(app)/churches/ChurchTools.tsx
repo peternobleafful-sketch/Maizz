@@ -19,7 +19,7 @@ export interface ChurchRow {
 interface Bank { name: string; code: string; kind: "mobile_money" | "bank" }
 interface Person { id: string; name: string; email: string; role: string; status: string }
 
-type Reply = { error?: string; message?: string; notice?: string; challenge?: string; banks?: Bank[]; people?: Person[]; church?: { name: string; status: string; payoutAccountName: string | null; slug: string } };
+type Reply = { error?: string; message?: string; notice?: string; challenge?: string; method?: "email" | "app"; banks?: Bank[]; people?: Person[]; church?: { name: string; status: string; payoutAccountName: string | null; slug: string } };
 
 export default function ChurchTools({ churches }: { churches: ChurchRow[] }) {
   const router = useRouter();
@@ -32,6 +32,7 @@ export default function ChurchTools({ churches }: { churches: ChurchRow[] }) {
   const [bankCode, setBankCode] = useState("");
   const [account, setAccount] = useState("");
   const [challenge, setChallenge] = useState("");
+  const [method, setMethod] = useState<"email" | "app">("email");
   const [code, setCode] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [people, setPeople] = useState<Person[] | null>(null);
@@ -93,6 +94,7 @@ export default function ChurchTools({ churches }: { churches: ChurchRow[] }) {
     const r = await call({ action: "payout_code", slug });
     if (r?.challenge) {
       setChallenge(r.challenge);
+      setMethod(r.method === "app" ? "app" : "email");
       setMessage(r.message ?? "A code was emailed to you.");
     }
   }
@@ -173,7 +175,7 @@ export default function ChurchTools({ churches }: { churches: ChurchRow[] }) {
                         <div className="give-form">
                           <h3>Payout account</h3>
                           <p className="dash-muted">
-                            Test mode only. Only the last 4 digits are kept. You will be emailed a code to confirm, and the church&apos;s owners are told afterwards.
+                            Test mode only. Only the last 4 digits are kept. You will confirm with a code (from your authenticator app if it is on, otherwise by email), and the church&apos;s owners are told afterwards.
                           </p>
                           <div className="give-group">
                             <label className="give-label" htmlFor={`bank-${c.slug}`}>Bank or mobile money network</label>
@@ -194,7 +196,7 @@ export default function ChurchTools({ churches }: { churches: ChurchRow[] }) {
                           ) : (
                             <>
                               <div className="give-group">
-                                <label className="give-label" htmlFor={`code-${c.slug}`}>The 6-digit code from your email</label>
+                                <label className="give-label" htmlFor={`code-${c.slug}`}>{method === "app" ? "The 6-digit code from your authenticator app" : "The 6-digit code from your email"}</label>
                                 <input id={`code-${c.slug}`} className="give-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} />
                               </div>
                               <button className="dash-btn" type="button" disabled={busy || !/^\d{6}$/.test(code.trim()) || !bankCode || account.trim().length < 6} onClick={() => void savePayout(c.slug)}>

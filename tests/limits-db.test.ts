@@ -215,3 +215,69 @@ describe("0011: refunds can never add up to more than the gift amount", () => {
     await db.query("insert into gift_events (gift_id, status) values ($1, 'pending')", [id]);
   });
 });
+
+describe("0012: owner authenticator columns and recovery codes", () => {
+  it("lets a code be used only once (the step moves forward in one atomic update)", async () => {
+    const id = (await db.query<{ id: string }>("insert into owner_users (email, full_name) values ('t@m.test', 'T') returning id")).rows[0]!.id;
+    const claim = async (step: number) => (await db.query("update owner_users set totp_last_step = $2 where id = $1 and totp_last_step < $2 returning id", [id, step])).rows.length;
+    const results = await Promise.all(Array.from({ length: 10 }, () => claim(5_000)));
+    expect(results.reduce((a, b) => a + b, 0)).toBe(1);
+    expect(await claim(4_999)).toBe(0);
+    expect(await claim(5_001)).toBe(1);
+  });
+
+  it("records switching the app on and off in the audit log, without any secret", async () => {
+    const id = (await db.query<{ id: string }>("insert into owner_users (email, full_name) values ('u@m.test', 'U') returning id")).rows[0]!.id;
+    await db.query("update owner_users set totp_secret = 'ENCRYPTED' where id = $1", [id]);
+    expect((await db.query("select 1 from audit_log where target = $1 and action like 'owner.authenticator_%'", [id])).rows).toHaveLength(0);
+    await db.query("update owner_users set totp_enabled_at = now() where id = $1", [id]);
+    await db.query("update owner_users set totp_enabled_at = null where id = $1", [id]);
+    const actions = (await db.query<{ action: string; detail: unknown }>("select action, detail from audit_log where target = $1 and action like 'owner.authenticator_%' order by id", [id])).rows;
+    expect(actions.map((a) => a.action)).toEqual(["owner.authenticator_on", "owner.authenticator_off"]);
+    expect(JSON.stringify(actions)).not.toContain("ENCRYPTED");
+  });
+
+  it("uses a recovery code once", async () => {
+    const id = (await db.query<{ id: string }>("insert into owner_users (email, full_name) values ('v@m.test', 'V') returning id")).rows[0]!.id;
+    const hash = "a".repeat(64);
+    await db.query("insert into owner_recovery_codes (user_id, code_hash) values ($1, $2)", [id, hash]);
+    const use = async () => (await db.query("update owner_recovery_codes set used_at = now() where user_id = $1 and code_hash = $2 and used_at is null returning id", [id, hash])).rows.length;
+    expect((await Promise.all([use(), use(), use()])).reduce((a, b) => a + b, 0)).toBe(1);
+    await expect(db.query("insert into owner_recovery_codes (user_id, code_hash) values ($1, $2)", [id, hash])).rejects.toThrow();
+    await expect(db.query("insert into owner_recovery_codes (user_id, code_hash) values ($1, 'short')", [id])).rejects.toThrow();
+  });
+});
+
+describe("0012: safety wait after a payout account is changed", () => {
+  const church = async (slug: string) => (await db.query<{ id: string }>("insert into churches (name, slug, status) values ($1, $2, 'pending') returning id", [slug, slug])).rows[0]!.id;
+  const setAccount = (id: string, code: string) => db.query("update churches set provider_subaccount_code = $2 where id = $1", [id, code]);
+  const open = (id: string) => db.query("update churches set status = 'active' where id = $1", [id]);
+  const changedAt = async (id: string) => (await db.query<{ payout_changed_at: Date | null }>("select payout_changed_at from churches where id = $1", [id])).rows[0]!.payout_changed_at;
+
+  it("does not delay the first time an account is set", async () => {
+    const id = await church("first-time");
+    await setAccount(id, "ACCT_FIRST_1");
+    expect(await changedAt(id)).toBeNull();
+    await open(id);
+  });
+
+  it("holds a church closed for 24 hours after the account is CHANGED", async () => {
+    const id = await church("changed");
+    await setAccount(id, "ACCT_CHG_1");
+    await open(id);
+    await db.query("update churches set status = 'suspended' where id = $1", [id]);
+    await setAccount(id, "ACCT_CHG_2");
+    expect(await changedAt(id)).not.toBeNull();
+    await expect(open(id)).rejects.toThrow(/maizz_payout_cooldown/);
+    await db.query("update churches set status = 'pending' where id = $1", [id]); // staying closed is always allowed
+    await db.query("update churches set payout_changed_at = now() - interval '25 hours' where id = $1", [id]);
+    await open(id);
+  });
+
+  it("does not touch other changes, such as the name or the pause switch", async () => {
+    const id = await church("other");
+    await setAccount(id, "ACCT_OTHER_1");
+    await db.query("update churches set giving_paused = true where id = $1", [id]);
+    expect(await changedAt(id)).toBeNull();
+  });
+});

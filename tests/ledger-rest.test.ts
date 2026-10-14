@@ -117,6 +117,7 @@ describe("supabase ledger: churches and givers", () => {
       name: "Grace",
       status: "active",
       subaccountCode: null,
+      payoutChangedAt: null,
       payoutBankName: null,
       payoutAccountLast4: null,
       payoutAccountName: null,
