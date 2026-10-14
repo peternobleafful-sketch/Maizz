@@ -35,7 +35,7 @@ These are Kobina's rules. Follow them in every step. Update the status and the r
 - **Alerts (rule 6):** DONE in part: nightly reconciliation writes alert rows. STILL TO DO: Sentry for errors, and an email or message for failed signatures, amount mismatches, unconfirmed paid gifts, large gifts.
 - **Least access (rule 7):** a narrower database role (or database functions) for the webhook, so it can only read gifts and add events. Remove the Supabase and Paystack keys from the Vercel Development environment, since only Production needs them. Move the admin tools out of the public app before live.
 - **Backups and plan (rule 8):** move the database to Supabase Pro before any real data (daily backups kept 7 days), run a test restore, and write `docs/INCIDENT_RESPONSE.md` (who to call, how to pause payments, how to rotate keys, what to tell churches and the Data Protection Commission).
-- **Change control:** protect the `main` branch (changes by pull request, tests must pass) and add automatic tests on every push, before the pilot. Today every push goes straight to the live site.
+- ~~**Change control:**~~ DONE 14 Oct 2026: `main` is protected by a GitHub ruleset (no bypass): changes only by pull request, the "test" check (type check, tests, build) must pass, no force-push, no deletion. Secret scanning and push protection are on. Kobina merges each pull request. Reviewer: confirm the ruleset and that nobody can bypass it.
 - **Separate test and live:** a separate Supabase project and separate keys for live money, so test tools can never touch the live ledger.
 
 ## Reviewer list: things the independent reviewer should look at

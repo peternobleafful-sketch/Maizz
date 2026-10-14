@@ -8,6 +8,9 @@ Maizz is a giving platform for churches in Ghana. Its own service, separate from
 - Tell him plainly what each step cost in time and what he needs to do. Walk him through dashboard clicks step by step.
 - Never ask him to paste secret keys in chat. Keys go into settings boxes (Vercel) or GitHub repository secrets.
 
+## How changes go live
+`main` is protected (14 Oct 2026): never push to it. Work on a branch (`git checkout -b <short-name>`), push the branch, and give Kobina the link to open a pull request (GitHub shows "Compare & pull request"). He merges after the "test" check is green. SQL migrations still need his "Done" before the pull request is merged.
+
 ## Security rules (read `SECURITY.md` first)
 Nine rules apply to all work: verify webhook signatures; no secrets in code or chat; limit sign-in attempts and use 2FA; never store card numbers or PINs; log every ledger change and admin action; alerts for odd things; least access; backups and a written incident plan; independent security review before any live money.
 - Keep the status table and the reviewer list in `SECURITY.md` up to date at the end of every step. Say plainly if a change breaks one of the rules.
