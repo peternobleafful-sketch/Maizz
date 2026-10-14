@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import type { AuditEntry, AuditLog } from "../src/lib/audit";
 import { StaffError, type StaffStore, type StaffToken, type StaffUser, type TokenKind } from "../src/lib/staff";
-import type { ChurchRecord, ChurchStatus, EventStatus, GiftRecord, Ledger, NewEvent, NewGift, NewGiver, NewPayout, ReceiptInfo } from "../src/lib/ledger";
+import type { ChurchRecord, ChurchStatus, EventStatus, GiftRecord, Ledger, MemberGift, NewEvent, NewGift, NewGiver, NewPayout, ReceiptInfo } from "../src/lib/ledger";
 
 export interface Call {
   url: string;
@@ -48,6 +48,8 @@ export function makeChurch(over: Partial<ChurchRecord> & { id: string; slug: str
     payoutAccountName: null,
     paused: false,
     payoutChangedAt: null,
+    memberLinkEnabled: false,
+    memberLinkVersion: 1,
     ...over,
   };
 }
@@ -69,6 +71,7 @@ export class FakeLedger implements Ledger {
   giftGivers = new Map<string, string | undefined>();
   givers: { id: string; fullName: string; phone: string; email?: string; removed?: boolean }[] = [];
   giftTypes = new Map<string, string>();
+  memberRefs = new Map<string, string>();
 
   async findChurch(slug: string): Promise<ChurchRecord | null> {
     return this.churches.get(slug) ?? null;
@@ -114,6 +117,24 @@ export class FakeLedger implements Ledger {
     c.paused = paused;
   }
 
+  async setMemberLink(churchId: string, change: { enabled?: boolean; replaceKey?: boolean }): Promise<void> {
+    const c = [...this.churches.values()].find((x) => x.id === churchId);
+    if (!c) throw new Error("That church was not found");
+    if (change.enabled !== undefined) c.memberLinkEnabled = change.enabled;
+    if (change.replaceKey) c.memberLinkVersion += 1;
+  }
+
+  async listMemberGifts(churchId: string, memberRef: string): Promise<MemberGift[]> {
+    const out: MemberGift[] = [];
+    for (const g of this.gifts) {
+      if (g.churchId !== churchId || this.memberRefs.get(g.reference) !== memberRef) continue;
+      const s = await this.currentStatus(g.reference);
+      if (!s?.wasPaid) continue;
+      out.push({ reference: g.reference, giftType: this.giftTypes.get(g.reference) ?? "other", amountPesewas: g.amountPesewas, totalPesewas: g.totalPesewas, refundedPesewas: s.refundedPesewas, createdAt: g.createdAt });
+    }
+    return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 500);
+  }
+
   async createGiver(g: NewGiver): Promise<string> {
     const id = `giver-${this.givers.length + 1}`;
     this.givers.push({ id, ...g });
@@ -131,6 +152,7 @@ export class FakeLedger implements Ledger {
       createdAt: new Date(this.now()).toISOString(),
     };
     this.giftGivers.set(g.reference, g.giverId);
+    if (g.memberRef) this.memberRefs.set(g.reference, g.memberRef);
     this.giftTypes.set(g.reference, g.giftType);
     this.maizzFees.set(g.reference, g.maizzFeePesewas ?? 0);
     this.gifts.push(gift);

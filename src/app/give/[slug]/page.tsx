@@ -4,6 +4,7 @@ import { GIFT_TYPE_LABELS, SLUG_PATTERN } from "@/lib/checkout";
 import { classifyPaystackKey } from "@/lib/config";
 import type { ChurchRecord } from "@/lib/ledger";
 import { logError } from "@/lib/log";
+import { churchMemberKey, memberMasterKey, verifyMemberLink } from "@/lib/memberLink";
 import { getLedger } from "@/lib/payments";
 import GiveForm from "./GiveForm";
 
@@ -30,8 +31,17 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return { title: name ? `Give to ${name} | Maizz` : "Maizz", robots: { index: false } };
 }
 
-export default async function GivePage({ params }: { params: Promise<{ slug: string }> }) {
+const first = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined);
+
+export default async function GivePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { slug } = await params;
+  const query = await searchParams;
   const found = await lookup(slug);
   if ("error" in found) {
     return (
@@ -69,5 +79,14 @@ export default async function GivePage({ params }: { params: Promise<{ slug: str
   }
   const testMode = classifyPaystackKey(process.env.PAYSTACK_SECRET_KEY) === "test";
   const types = Object.entries(GIFT_TYPE_LABELS).map(([value, label]) => ({ value, label }));
-  return <GiveForm slug={slug} churchName={found.church.name} testMode={testMode} types={types} />;
+  // A genuine, in-date "Give now" link from Church Manager is passed on to the form. The checkout checks it again; nothing is trusted from here.
+  let memberLink: { ref: string; expires: number; signature: string } | undefined;
+  const master = memberMasterKey(process.env);
+  const link = { member: first(query.m), expires: first(query.e), signature: first(query.s) };
+  if (master && found.church.memberLinkEnabled && link.member && link.expires && link.signature) {
+    const key = churchMemberKey(master, found.church.id, found.church.memberLinkVersion);
+    const ref = verifyMemberLink(key, found.church.slug, link, Date.now());
+    if (ref) memberLink = { ref, expires: Number(link.expires), signature: link.signature };
+  }
+  return <GiveForm slug={slug} churchName={found.church.name} testMode={testMode} types={types} memberLink={memberLink} />;
 }

@@ -5,13 +5,14 @@ import { logError } from "./log";
 import type { PaymentProvider } from "./payments/types";
 import type { StaffService, StaffUser } from "./staff";
 import { PUBLIC_URL_MESSAGE } from "./config";
+import { churchMemberKey } from "./memberLink";
 import { readJson, sameSite } from "./staffRoutes";
 
 // The church tools of the Maizz owner: add a church, set its payout account, open or suspend it, send an invite again.
 // Everything here sits behind the owner sign-in (password and emailed code). Changing a payout account also needs a fresh emailed code,
 // and the church's own owners are emailed afterwards. The audit record is written before anything changes.
 
-export const OWNER_CHURCH_ACTIONS = ["list", "banks", "create", "payout_code", "payout", "activate", "suspend", "team", "resend"] as const;
+export const OWNER_CHURCH_ACTIONS = ["list", "banks", "create", "payout_code", "payout", "activate", "suspend", "team", "resend", "member_link", "member_link_on", "member_link_off", "member_link_key", "member_link_new_key"] as const;
 export type OwnerChurchAction = (typeof OWNER_CHURCH_ACTIONS)[number];
 
 export interface OwnerChurchDeps {
@@ -32,6 +33,8 @@ export interface OwnerChurchDeps {
   baseUrl: string | null;
   /** True with a live payment key: a payout change then needs the authenticator app, not an emailed code. */
   requireApp?: boolean;
+  /** MEMBER_LINK_MASTER_KEY, or null when it is not set (the Church Manager link is then off everywhere). */
+  memberMaster?: string | null;
 }
 
 const NO = (status: number, error: string) => Response.json({ error }, { status });
@@ -166,6 +169,55 @@ export async function handleOwnerChurches(d: OwnerChurchDeps): Promise<Response>
         if (!(await recordFirst("invite_resend"))) return unrecorded();
         await d.churchService.resendInvite({ userId: body.userId, churchName: church.name, baseUrl: d.baseUrl });
         return Response.json({ ok: true, message: "A new invite email was sent." });
+      }
+
+      case "member_link": {
+        if (!slug) return NO(400, "Choose a church.");
+        const church = await d.ledger.findChurch(slug);
+        if (!church) return NO(404, "No such church.");
+        return Response.json({ memberLink: { available: !!d.memberMaster, enabled: church.memberLinkEnabled, keyVersion: church.memberLinkVersion } });
+      }
+
+      case "member_link_on":
+      case "member_link_off":
+      case "member_link_new_key": {
+        if (!slug) return NO(400, "Choose a church.");
+        if (!d.memberMaster) return NO(503, "The Church Manager link is not set up yet. Add MEMBER_LINK_MASTER_KEY in Vercel first.");
+        const church = await d.ledger.findChurch(slug);
+        if (!church) return NO(404, "No such church.");
+        if (!(await recordFirst(action))) return unrecorded();
+        if (action === "member_link_new_key") await d.ledger.setMemberLink(church.id, { replaceKey: true });
+        else await d.ledger.setMemberLink(church.id, { enabled: action === "member_link_on" });
+        const fresh = await d.ledger.findChurch(slug);
+        return Response.json({
+          memberLink: { available: true, enabled: fresh?.memberLinkEnabled ?? false, keyVersion: fresh?.memberLinkVersion ?? church.memberLinkVersion },
+          message:
+            action === "member_link_new_key"
+              ? "A new key was made. The old key stops working now. Show the new key and put it into Church Manager."
+              : action === "member_link_on"
+                ? "The Church Manager link is on for this church."
+                : "The Church Manager link is off for this church.",
+        });
+      }
+
+      case "member_link_key": {
+        if (!slug) return NO(400, "Choose a church.");
+        if (!d.memberMaster) return NO(503, "The Church Manager link is not set up yet. Add MEMBER_LINK_MASTER_KEY in Vercel first.");
+        const church = await d.ledger.findChurch(slug);
+        if (!church) return NO(404, "No such church.");
+        // The key lets Church Manager tag gifts and read a member's history, so a fresh code is needed to see it.
+        const check = await d.ownerService.verifyStepUp(d.cookie, body.challenge, body.code, d.source);
+        if (!check.ok) {
+          if (check.reason === "signed_out") return NO(401, "Please sign in again.");
+          if (check.reason === "locked") return NO(429, "Too many wrong codes. Wait 15 minutes and try again.");
+          if (check.reason === "wrong") return NO(403, "That code is not right.");
+          if (check.reason === "expired") return NO(403, "That code has expired or was already used. Ask for a new one.");
+          return NO(503, "The code could not be checked. Try again in a minute.");
+        }
+        if (!(await recordFirst("member_link_key_shown"))) return unrecorded();
+        const res = Response.json({ key: churchMemberKey(d.memberMaster, church.id, church.memberLinkVersion), keyVersion: church.memberLinkVersion });
+        res.headers.set("Cache-Control", "no-store");
+        return res;
       }
     }
   } catch (err) {

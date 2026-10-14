@@ -1,5 +1,6 @@
 import { getAudit } from "@/lib/audit";
 import { classifyPaystackKey, publicBaseUrl, requireSupabase } from "@/lib/config";
+import { memberMasterKey } from "@/lib/memberLink";
 import { handleOwnerChurches } from "@/lib/ownerChurches";
 import { getLedger, getPaymentProvider } from "@/lib/payments";
 import { sourceOf } from "@/lib/staffRoutes";
@@ -26,6 +27,7 @@ export async function POST(req: Request) {
       cookie: readCookie(req, OWNER_COOKIE),
       source: sourceOf(req),
       baseUrl: publicBaseUrl(process.env),
+      memberMaster: memberMasterKey(process.env),
       requireApp: classifyPaystackKey(process.env.PAYSTACK_SECRET_KEY) === "live",
     });
   } catch {

@@ -29,6 +29,20 @@ export interface NewGift {
   maizzFeePesewas?: number;
   /** Leave out for an anonymous gift: nothing about the giver is stored. */
   giverId?: string;
+  /** Church Manager's opaque id for the member who gave through its signed link. No name, phone or email. */
+  memberRef?: string;
+}
+
+/** One paid gift in a member's history. */
+export interface MemberGift {
+  reference: string;
+  giftType: string;
+  /** What the church received. */
+  amountPesewas: number;
+  /** What the giver paid in all, with fees. */
+  totalPesewas: number;
+  refundedPesewas: number;
+  createdAt: string;
 }
 
 export type ChurchStatus = "pending" | "active" | "suspended";
@@ -49,6 +63,10 @@ export interface ChurchRecord {
   paused: boolean;
   /** When the payout account was last CHANGED (not first set), as ISO text. The church cannot reopen for 24 hours after. */
   payoutChangedAt?: string | null;
+  /** Church Manager "My giving" link: off until Maizz switches it on for this church. */
+  memberLinkEnabled: boolean;
+  /** Raised to replace the church's signing key. */
+  memberLinkVersion: number;
 }
 
 export interface NewPayout {
@@ -98,6 +116,10 @@ export interface Ledger {
   setChurchStatus(churchId: string, status: ChurchStatus): Promise<void>;
   /** The church's own pause switch. Never changes the church's status. */
   setChurchPaused(churchId: string, paused: boolean): Promise<void>;
+  /** Switch the Church Manager link on or off, and/or replace the church's signing key (all signatures made with the old key stop working). */
+  setMemberLink(churchId: string, change: { enabled?: boolean; replaceKey?: boolean }): Promise<void>;
+  /** The paid gifts that were made through this member's signed link at this church, newest first (at most 500). */
+  listMemberGifts(churchId: string, memberRef: string): Promise<MemberGift[]>;
   createGiver(giver: NewGiver): Promise<string>;
   createGift(gift: NewGift): Promise<GiftRecord>;
   /** Everything a receipt email needs, or null if the gift does not exist. */
@@ -157,7 +179,7 @@ function toGift(row: unknown): GiftRecord {
 }
 
 const CHURCH_COLUMNS =
-  "id,slug,name,status,provider_subaccount_code,payout_bank_name,payout_account_last4,payout_account_name,giving_paused,payout_changed_at";
+  "id,slug,name,status,provider_subaccount_code,payout_bank_name,payout_account_last4,payout_account_name,giving_paused,payout_changed_at,member_link_enabled,member_link_version";
 
 function str(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
@@ -184,6 +206,8 @@ function toChurch(row: unknown): ChurchRecord {
     payoutAccountName: str(row.payout_account_name),
     paused: row.giving_paused === true,
     payoutChangedAt: str(row.payout_changed_at),
+    memberLinkEnabled: row.member_link_enabled === true,
+    memberLinkVersion: typeof row.member_link_version === "number" && row.member_link_version >= 1 ? row.member_link_version : 1,
   };
 }
 
@@ -291,6 +315,42 @@ export function createSupabaseLedger(opts: {
       if ((await rows(res, "pause change")).length !== 1) throw new LedgerError("That church was not found");
     },
 
+    async setMemberLink(churchId, change) {
+      const id = encodeURIComponent(churchId);
+      const patch: Record<string, unknown> = {};
+      let filter = `churches?id=eq.${id}`;
+      if (change.enabled !== undefined) patch.member_link_enabled = change.enabled;
+      if (change.replaceKey) {
+        const current = (await rows(await request("GET", `churches?id=eq.${id}&select=member_link_version&limit=1`), "key version"))[0];
+        if (!isRec(current) || typeof current.member_link_version !== "number") throw new LedgerError("That church was not found");
+        patch.member_link_version = current.member_link_version + 1;
+        // Only if nobody else replaced it in between.
+        filter += `&member_link_version=eq.${current.member_link_version}`;
+      }
+      if (Object.keys(patch).length === 0) return;
+      const res = await request("PATCH", filter, patch, "return=representation");
+      if ((await rows(res, "member link change")).length !== 1) throw new LedgerError("That church was not found, or its key was changed at the same moment");
+    },
+
+    async listMemberGifts(churchId, memberRef) {
+      const res = await request(
+        "GET",
+        `gift_status?church_id=eq.${encodeURIComponent(churchId)}&member_ref=eq.${encodeURIComponent(memberRef)}&was_paid=eq.true` +
+          `&select=reference,gift_type,amount_pesewas,total_pesewas,refunded_pesewas,created_at&order=created_at.desc&limit=500`,
+      );
+      return (await rows(res, "member gifts")).map((r): MemberGift => {
+        if (!isRec(r) || typeof r.reference !== "string") throw new LedgerError("Unexpected gift row from the database");
+        return {
+          reference: r.reference,
+          giftType: String(r.gift_type),
+          amountPesewas: pesewas(r.amount_pesewas, "amount"),
+          totalPesewas: pesewas(r.total_pesewas, "total"),
+          refundedPesewas: pesewas(r.refunded_pesewas ?? 0, "refunded"),
+          createdAt: typeof r.created_at === "string" ? r.created_at : "",
+        };
+      });
+    },
+
     async createGiver(giver) {
       const res = await request(
         "POST",
@@ -327,6 +387,7 @@ export function createSupabaseLedger(opts: {
           reference: gift.reference,
           church_id: gift.churchId,
           giver_id: gift.giverId ?? null,
+          ...(gift.memberRef ? { member_ref: gift.memberRef } : {}),
           gift_type: gift.giftType,
           amount_pesewas: gift.amountPesewas,
           fee_pesewas: gift.feePesewas,
