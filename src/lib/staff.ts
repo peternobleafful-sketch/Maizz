@@ -20,11 +20,13 @@ export const STAFF_LIMITS = {
   resetRequests: 5,
   /** Fresh codes one source may ask for to confirm a payout change, in the window. */
   stepUpRequests: 5,
-  /** Wrong passwords or codes for one person before they are locked out. */
-  userFailures: 5,
+  /** Wrong passwords or codes for one person, from anywhere, before they are locked out for everyone. */
+  personFailures: 20,
   lockMinutes: 15,
-  /** Wrong passwords or codes from one source address in the window. */
-  sourceFailures: 10,
+  /** Password and code attempts from one source address in the window. */
+  sourceAttempts: 30,
+  /** Password and code attempts at one person's account from one source address in the window. Only that source is stopped. */
+  personSourceAttempts: 8,
   windowMinutes: 15,
   minPassword: 12,
   maxPassword: 200,
@@ -68,7 +70,10 @@ export interface StaffStore {
   getToken(id: string): Promise<StaffToken | null>;
   /** True only for the one caller that marks an unused token used. */
   consumeToken(id: string): Promise<boolean>;
-  setTokenAttempts(id: string, attempts: number): Promise<void>;
+  /** Adds one to a code's tries and returns the new number, in one atomic step (so a burst of guesses is counted exactly). */
+  incrementTokenAttempts(id: string): Promise<number>;
+  /** Adds one to a person's wrong-attempt count and returns the new number, in one atomic step. */
+  incrementFailures(userId: string): Promise<number>;
   /** Marks every unused token of this kind for this person as used. */
   revokeTokens(userId: string, kind: TokenKind): Promise<void>;
 }
@@ -187,28 +192,33 @@ export function createStaffService(deps: {
     await audit.record({ actor: userId ? actorOf(userId) : "unknown", action, outcome, sourceKey, target: userId });
   }
 
-  async function sourceLocked(sourceKey: string): Promise<boolean> {
-    const [a, b] = await Promise.all([
-      audit.countSince("staff.signin_failed", STAFF_LIMITS.windowMinutes, sourceKey),
-      audit.countSince("staff.code_failed", STAFF_LIMITS.windowMinutes, sourceKey),
-    ]);
-    return a + b >= STAFF_LIMITS.sourceFailures;
+  /**
+   * Counts one attempt and says whether this source has gone over its limit. Counting and recording are one atomic step,
+   * so a burst of simultaneous requests cannot all slip through.
+   */
+  async function sourceOver(action: "staff.attempt" | "staff.code_attempt", sourceKey: string): Promise<boolean> {
+    return (await audit.hit({ action, sourceKey, minutes: STAFF_LIMITS.windowMinutes })) > STAFF_LIMITS.sourceAttempts;
+  }
+
+  /** Counts one attempt at this person's account from this source. True when that source has gone over its limit for this person. */
+  async function personSourceOver(user: StaffUser, sourceKey: string): Promise<boolean> {
+    const key = h(`ps:${user.id}:${sourceKey}`);
+    return (await audit.hit({ action: "staff.attempt_person", sourceKey: key, minutes: STAFF_LIMITS.windowMinutes })) > STAFF_LIMITS.personSourceAttempts;
   }
 
   async function fail(user: StaffUser | null, action: string, sourceKey: string): Promise<void> {
     await record(action, "denied", sourceKey, user?.id);
     if (!user) return;
-    const failures = user.failedAttempts + 1;
-    await store.updateUser(user.id, {
-      failedAttempts: failures,
-      lockedUntil: failures >= STAFF_LIMITS.userFailures ? now() + STAFF_LIMITS.lockMinutes * minute : user.lockedUntil,
-    });
-    if (failures === STAFF_LIMITS.userFailures) {
+    const failures = await store.incrementFailures(user.id);
+    if (failures >= STAFF_LIMITS.personFailures) {
+      await store.updateUser(user.id, { lockedUntil: now() + STAFF_LIMITS.lockMinutes * minute });
+    }
+    if (failures === STAFF_LIMITS.personFailures) {
       await record("staff.locked", "denied", sourceKey, user.id);
       await deps.alert?.(area === "owner" ? "owner_locked" : "staff_locked", area === "owner" ? "The Maizz owner sign-in was locked after wrong attempts" : "A church sign-in was locked after wrong attempts", [
         area === "owner"
-          ? "A Maizz owner sign-in was locked for 15 minutes after five wrong passwords or codes."
-          : "A person's church sign-in was locked for 15 minutes after five wrong passwords or codes.",
+          ? "A Maizz owner sign-in was locked for 15 minutes after 20 wrong passwords or codes from one or more places."
+          : "A person's church sign-in was locked for 15 minutes after 20 wrong passwords or codes from one or more places.",
         "If they were not the one trying, someone may be guessing. Check the audit log (staff.signin_failed, staff.code_failed).",
       ]);
     }
@@ -254,16 +264,19 @@ export function createStaffService(deps: {
     /** Step one: email and password. If they are right, a code goes to the email. */
     async signIn(emailRaw: unknown, password: unknown, sourceKey: string): Promise<SignInResult> {
       try {
-        if (await sourceLocked(sourceKey)) return { ok: false, reason: "locked" };
+        if (await sourceOver("staff.attempt", sourceKey)) return { ok: false, reason: "locked" };
         const email = normaliseEmail(emailRaw);
         const pw = typeof password === "string" && password.length <= STAFF_LIMITS.maxPassword ? password : "";
         const user = email ? await store.findUserByEmail(email) : null;
         const usable = user && user.status === "active" ? user : null;
+        const stopped = usable ? await personSourceOver(usable, sourceKey) : false;
         const passwordOk = await verifyPassword(pw, usable?.passwordHash ?? null);
 
-        if (usable?.lockedUntil && usable.lockedUntil > now()) {
+        // A locked person, or a source that has tried too often at this person, gets exactly the same answer as a wrong password.
+        // That way nobody can tell from outside which emails have accounts.
+        if (usable && (stopped || (usable.lockedUntil && usable.lockedUntil > now()))) {
           await record("staff.signin_failed", "denied", sourceKey, usable.id);
-          return { ok: false, reason: "locked" };
+          return { ok: false, reason: "wrong" };
         }
         if (!usable || !passwordOk) {
           await fail(usable, "staff.signin_failed", sourceKey);
@@ -292,7 +305,7 @@ export function createStaffService(deps: {
     /** Step two: the emailed code. If it is right, a session starts. */
     async verifyCode(challenge: unknown, codeRaw: unknown, sourceKey: string): Promise<CodeResult> {
       try {
-        if (await sourceLocked(sourceKey)) return { ok: false, reason: "locked" };
+        if (await sourceOver("staff.code_attempt", sourceKey)) return { ok: false, reason: "locked" };
         const code = typeof codeRaw === "string" ? codeRaw.replace(/\s/g, "") : "";
         const token = typeof challenge === "string" && /^[0-9a-f-]{36}$/.test(challenge) ? await store.getToken(challenge) : null;
         if (!token || token.kind !== "code" || token.usedAt !== null || token.expiresAt <= now()) {
@@ -301,13 +314,18 @@ export function createStaffService(deps: {
         }
         const user = await store.getUser(token.userId);
         if (!user || user.status !== "active") return { ok: false, reason: "expired" };
-        if (user.lockedUntil && user.lockedUntil > now()) return { ok: false, reason: "locked" };
-        if (token.attempts >= STAFF_LIMITS.codeTries) {
+        // Too many tries at this person from this source, or the person is locked: answer like a wrong code.
+        if ((await personSourceOver(user, sourceKey)) || (user.lockedUntil && user.lockedUntil > now())) {
+          await record("staff.code_failed", "denied", sourceKey, user.id);
+          return { ok: false, reason: "wrong" };
+        }
+        // The try is counted before the code is compared, in one atomic step, so a burst of guesses cannot get more than codeTries looks.
+        const tries = await store.incrementTokenAttempts(token.id);
+        if (tries > STAFF_LIMITS.codeTries) {
           await store.consumeToken(token.id);
           return { ok: false, reason: "expired" };
         }
         if (!/^\d{6}$/.test(code) || !same(token.tokenHash, h(`${user.id}:${code}`))) {
-          await store.setTokenAttempts(token.id, token.attempts + 1);
           await fail(user, "staff.code_failed", sourceKey);
           return { ok: false, reason: "wrong" };
         }
@@ -326,9 +344,8 @@ export function createStaffService(deps: {
     /** "Forgot password". Always looks the same from outside, so nobody can test which emails have accounts. */
     async requestReset(emailRaw: unknown, baseUrl: string, sourceKey: string): Promise<void> {
       try {
-        const asked = await audit.countSince("staff.reset_requested", STAFF_LIMITS.windowMinutes, sourceKey);
-        await record("staff.reset_requested", "ok", sourceKey);
-        if (asked >= STAFF_LIMITS.resetRequests) return;
+        const asked = await audit.hit({ action: "staff.reset_requested", sourceKey, minutes: STAFF_LIMITS.windowMinutes });
+        if (asked > STAFF_LIMITS.resetRequests) return;
         const email = normaliseEmail(emailRaw);
         const user = email ? await store.findUserByEmail(email) : null;
         if (!user || user.status !== "active") return;
@@ -370,8 +387,8 @@ export function createStaffService(deps: {
       try {
         const session = await this.getSession(sessionToken);
         if (!session) return { ok: false, reason: "signed_out" };
-        const asked = await audit.countSince("staff.stepup_sent", STAFF_LIMITS.windowMinutes, sourceKey);
-        if (asked >= STAFF_LIMITS.stepUpRequests) return { ok: false, reason: "locked" };
+        const asked = await audit.hit({ action: "staff.stepup_sent", sourceKey, minutes: STAFF_LIMITS.windowMinutes });
+        if (asked > STAFF_LIMITS.stepUpRequests) return { ok: false, reason: "locked" };
         const user = session.user;
         await store.revokeTokens(user.id, "payout");
         const code = newCode();
@@ -386,7 +403,6 @@ export function createStaffService(deps: {
           subject: `Your Maizz code to change a payout account is ${code}`,
           text: `Your Maizz confirmation code is ${code}.\n\nIt is needed to change where a church's gifts are paid out. It works once, for ${STAFF_LIMITS.codeMinutes} minutes. If you did not ask for it, do not use it and change your password.\n\nMaizz will never ask you for this code by phone or message.`,
         });
-        await record("staff.stepup_sent", "ok", sourceKey, user.id);
         return { ok: true, challenge };
       } catch {
         return { ok: false, reason: "unavailable" };
@@ -399,7 +415,7 @@ export function createStaffService(deps: {
         const session = await this.getSession(sessionToken);
         if (!session) return { ok: false, reason: "signed_out" };
         const user = session.user;
-        if (await sourceLocked(sourceKey)) return { ok: false, reason: "locked" };
+        if (await sourceOver("staff.code_attempt", sourceKey)) return { ok: false, reason: "locked" };
         if (user.lockedUntil && user.lockedUntil > now()) return { ok: false, reason: "locked" };
         const code = typeof codeRaw === "string" ? codeRaw.replace(/\s/g, "") : "";
         const token = typeof challenge === "string" && /^[0-9a-f-]{36}$/.test(challenge) ? await store.getToken(challenge) : null;
@@ -407,12 +423,12 @@ export function createStaffService(deps: {
           await record("staff.code_failed", "denied", sourceKey, user.id);
           return { ok: false, reason: "expired" };
         }
-        if (token.attempts >= STAFF_LIMITS.codeTries) {
+        const tries = await store.incrementTokenAttempts(token.id);
+        if (tries > STAFF_LIMITS.codeTries) {
           await store.consumeToken(token.id);
           return { ok: false, reason: "expired" };
         }
         if (!/^\d{6}$/.test(code) || !same(token.tokenHash, h(`payout:${user.id}:${code}`))) {
-          await store.setTokenAttempts(token.id, token.attempts + 1);
           await fail(user, "staff.code_failed", sourceKey);
           return { ok: false, reason: "wrong" };
         }

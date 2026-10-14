@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createSupabaseOwnerData, platformSummary, type PlatformGift } from "../src/lib/ownerData";
-import { createStaffService, type Mailer, type StaffStore, type StaffToken, type StaffUser, type TokenKind } from "../src/lib/staff";
+import { createStaffService, type Mailer } from "../src/lib/staff";
 import { createSupabaseStaffStore } from "../src/lib/staffStore";
-import { FakeAudit, mockFetch } from "./helpers";
+import { FakeAudit, FakeStaffStore, mockFetch } from "./helpers";
 
 const NOW = Date.UTC(2026, 9, 14, 12, 0, 0); // Wed 14 Oct 2026, noon
 const iso = (daysAgo: number, hour = 9) => new Date(Date.UTC(2026, 9, 14 - daysAgo, hour)).toISOString();
@@ -156,35 +156,9 @@ describe("owner store (REST)", () => {
   });
 });
 
-// A tiny in-memory store, enough to see what the service says and records for the owner door.
-class MemStore implements StaffStore {
-  users: StaffUser[] = [];
-  tokens: StaffToken[] = [];
-  n = 0;
-  async findUserByEmail(e: string) { return this.users.find((u) => u.email === e) ?? null; }
-  async getUser(id: string) { return this.users.find((u) => u.id === id) ?? null; }
-  async listUsers() { return this.users; }
-  async createUser(u: { churchId: string; email: string; fullName: string; role: StaffUser["role"] }) {
-    const user: StaffUser = { id: `00000000-0000-0000-0000-${String(++this.n).padStart(12, "0")}`, ...u, status: "invited", passwordHash: null, failedAttempts: 0, lockedUntil: null };
-    this.users.push(user);
-    return user;
-  }
-  async updateUser(id: string, p: Parameters<StaffStore["updateUser"]>[1]) { Object.assign(this.users.find((u) => u.id === id)!, p); }
-  async createToken(t: { userId: string; kind: TokenKind; tokenHash: string; expiresAt: number }) {
-    const token: StaffToken = { id: `10000000-0000-0000-0000-${String(++this.n).padStart(12, "0")}`, ...t, attempts: 0, usedAt: null };
-    this.tokens.push(token);
-    return token.id;
-  }
-  async findTokenByHash(k: TokenKind, h: string) { return this.tokens.find((t) => t.kind === k && t.tokenHash === h) ?? null; }
-  async getToken(id: string) { return this.tokens.find((t) => t.id === id) ?? null; }
-  async consumeToken(id: string) { const t = this.tokens.find((x) => x.id === id)!; if (t.usedAt !== null) return false; t.usedAt = 1; return true; }
-  async setTokenAttempts(id: string, a: number) { this.tokens.find((x) => x.id === id)!.attempts = a; }
-  async revokeTokens(uid: string, k: TokenKind) { for (const t of this.tokens) if (t.userId === uid && t.kind === k && t.usedAt === null) t.usedAt = 1; }
-}
-
 describe("owner sign-in service", () => {
   const setup = () => {
-    const store = new MemStore();
+    const store = new FakeStaffStore();
     const audit = new FakeAudit();
     const sent: { to: string; subject: string; text: string }[] = [];
     const alerts: string[] = [];
@@ -209,7 +183,7 @@ describe("owner sign-in service", () => {
     const { svc, sent, audit, alerts } = setup();
     await svc.invite({ churchId: "platform", churchName: "Maizz", email: "isaac@maizz.test", fullName: "Isaac", role: "owner", baseUrl: "https://m.test" });
     await svc.acceptInvite(/token=([\w-]+)/.exec(sent[0]!.text)![1]!, "correct horse battery");
-    for (let i = 0; i < 5; i += 1) await svc.signIn("isaac@maizz.test", "wrong wrong wrong", "src");
+    for (let i = 0; i < 20; i += 1) await svc.signIn("isaac@maizz.test", "wrong wrong wrong", `src${i}`);
     expect(audit.entries.some((e) => e.actor.startsWith("owner:"))).toBe(true);
     expect(audit.entries.some((e) => e.actor.startsWith("staff:"))).toBe(false);
     expect(alerts).toEqual(["owner_locked"]);

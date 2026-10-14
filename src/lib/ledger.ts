@@ -108,8 +108,16 @@ export interface Ledger {
   listUnsettled(opts: { olderThanMinutes: number; newerThanDays: number; limit: number }): Promise<GiftRecord[]>;
   /** Gifts marked paid in the last few days, newest first. Used to double-check the books. */
   listRecentPaid(opts: { sinceDays: number; limit: number }): Promise<GiftRecord[]>;
+  /** Gifts closed as abandoned or failed (never paid), started in the last few days. Newest first. A late payment may still arrive for them. */
+  listClosedUnpaid(opts: { sinceDays: number; limit: number }): Promise<GiftRecord[]>;
   /** True if the database holds any test gift (reference mz_test_...). With a live key that must never be the case. */
   hasTestGifts(): Promise<boolean>;
+  /** Removes a giver's name, phone and email for good (the gifts and their amounts stay). False if already removed or not found. */
+  anonymiseGiver(giverId: string): Promise<boolean>;
+  /** Same, found through one of the giver's gift references. */
+  anonymiseGiverOfGift(reference: string): Promise<"done" | "already" | "no_giver" | "not_found">;
+  /** The daily clean-up: old unpaid givers and old declined applications lose their personal details. */
+  cleanUpOldDetails(periods: { giverDays: number; applicationDays: number }): Promise<{ givers: number; applications: number }>;
 }
 
 export class LedgerError extends Error {}
@@ -391,6 +399,41 @@ export function createSupabaseLedger(opts: {
         `gift_status?status=eq.pending&created_at=lt.${encodeURIComponent(older)}&created_at=gt.${encodeURIComponent(newer)}&select=id:gift_id,reference,church_id,amount_pesewas,fee_pesewas,total_pesewas,created_at&order=created_at.asc&limit=${Math.max(1, Math.floor(limit))}`,
       );
       return (await rows(res, "unsettled gifts")).map(toGift);
+    },
+
+    async listClosedUnpaid({ sinceDays, limit }) {
+      const since = new Date(Date.now() - sinceDays * 86_400_000).toISOString();
+      const res = await request(
+        "GET",
+        `gift_status?was_paid=eq.false&status=in.(abandoned,failed)&created_at=gt.${encodeURIComponent(since)}&select=id:gift_id,reference,church_id,amount_pesewas,fee_pesewas,total_pesewas,created_at&order=created_at.desc&limit=${Math.max(1, Math.floor(limit))}`,
+      );
+      return (await rows(res, "closed gifts")).map(toGift);
+    },
+
+    async anonymiseGiver(giverId) {
+      const res = await request(
+        "PATCH",
+        `givers?id=eq.${encodeURIComponent(giverId)}&anonymised_at=is.null`,
+        { full_name: null, phone: null, email: null, anonymised_at: new Date().toISOString() },
+        "return=representation",
+      );
+      return (await rows(res, "giver clean-up")).length === 1;
+    },
+
+    async anonymiseGiverOfGift(reference) {
+      const res = await request("GET", `gifts?reference=eq.${encodeURIComponent(reference)}&select=giver_id&limit=1`);
+      const gift = (await rows(res, "gift lookup"))[0];
+      if (gift === undefined) return "not_found";
+      if (!isRec(gift) || typeof gift.giver_id !== "string") return "no_giver";
+      return (await this.anonymiseGiver(gift.giver_id)) ? "done" : "already";
+    },
+
+    async cleanUpOldDetails({ giverDays, applicationDays }) {
+      const res = await request("POST", "rpc/maizz_clean_up", { p_giver_days: giverDays, p_application_days: applicationDays });
+      if (!res.ok) throw new LedgerError(`Database refused the clean-up (${res.status})`);
+      const j: unknown = await res.json();
+      if (!isRec(j) || !Number.isSafeInteger(j.givers) || !Number.isSafeInteger(j.applications)) throw new LedgerError("Unreadable clean-up answer");
+      return { givers: j.givers as number, applications: j.applications as number };
     },
 
     async listRecentPaid({ sinceDays, limit }) {

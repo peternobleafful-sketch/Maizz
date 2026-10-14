@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { STAFF_LIMITS, type Area } from "./staff";
 import { cookieHeader, cookieNameFor, getStaffService, readCookie } from "./staffRuntime";
 import { readJson, sameSite, setupProblem, sourceOf } from "./staffRoutes";
@@ -72,12 +73,17 @@ export function staffHandlers(area: Area) {
       if (!sameSite(req)) return NOT_ALLOWED();
       const body = await readJson(req);
       if (!body) return BAD();
-      try {
-        const baseUrl = process.env.MAIZZ_PUBLIC_URL?.trim() || new URL(req.url).origin;
-        await getStaffService(process.env, { area }).requestReset(body.email, baseUrl, sourceOf(req));
-      } catch {
-        // Same answer either way.
-      }
+      // The answer goes back at once and the work (and the email) happens afterwards, so the time taken
+      // never shows whether an email has an account.
+      const source = sourceOf(req);
+      const baseUrl = process.env.MAIZZ_PUBLIC_URL?.trim() || new URL(req.url).origin;
+      after(async () => {
+        try {
+          await getStaffService(process.env, { area }).requestReset(body.email, baseUrl, source);
+        } catch {
+          // Nothing is said to the person either way.
+        }
+      });
       return Response.json({ ok: true });
     },
 

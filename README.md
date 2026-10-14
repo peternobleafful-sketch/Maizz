@@ -120,3 +120,14 @@ Needs migration `0009_owner_payout_code.sql` (run it in Supabase before the code
 - **Lock-out fix:** the right admin or cron secret always works; wrong ones lock only the sender; the watchdog has its own counter.
 - **Live key guard:** with a live key, checkout refuses while any test gift exists. See `docs/LIVE_DATABASE.md`.
 - **Refund rule:** a refund returns the gift amount only. Fees are not refunded (Maizz mistakes are decided case by case). Refunds stay test-only until Paystack answers in writing.
+
+## Security review, group B (14 Oct 2026)
+
+Needs migration `0010_atomic_limits_retention.sql` (run it in Supabase before the code goes live) and a new Vercel setting `RATE_LIMIT_SECRET` (32+ random characters, Production, Sensitive).
+
+- **Attempt limits that hold under floods:** every sign-in, code, reset, step-up, admin-token, checkout, code and application attempt is counted and recorded in one database step.
+- **Sign-in:** a source address gets 30 attempts per 15 minutes; one person from one source gets 8; a person is locked for everyone only after 20 wrong tries. Locked, over the limit, wrong password and unknown email all look the same. Reset requests answer at once.
+- **Giving page:** 8 gift requests per source per 10 minutes, and 3 per phone number per hour (the number is stored only as a keyed hash in the counters).
+- **Personal details:** the nightly check (03:00) removes the name, phone and email of givers whose gifts were never paid after 30 days (`src/lib/retention.ts`), and the contact details of declined church applications after 90 days. Paid gifts keep their giver. The System page has "Remove a giver's details" (by gift reference) for data requests.
+- **Daily check:** also asks about gifts closed as abandoned or failed in the last 3 days, and records a late payment once, for the exact amount only.
+- **Content-Security-Policy:** report-only for the first week (`middleware.ts`). Reports are listed in the audit log as `csp.report`. Set `MAIZZ_CSP=enforce` to block for real.

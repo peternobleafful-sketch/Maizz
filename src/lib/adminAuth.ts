@@ -79,27 +79,19 @@ export async function adminGate(args: {
   }
 
   try {
-    const [mine, everyone] = await Promise.all([
-      audit.countSince(FAILED, ADMIN_LIMITS.windowMinutes, sourceKey),
-      audit.countSince(FAILED, ADMIN_LIMITS.windowMinutes),
-    ]);
-    if (mine >= ADMIN_LIMITS.perSource) {
+    // The wrong attempt is counted and recorded in one atomic step, so a burst of simultaneous guesses cannot slip past the limit.
+    const mine = await audit.hit({ action: FAILED, sourceKey, minutes: ADMIN_LIMITS.windowMinutes, outcome: "denied", target: action, actor: "unknown" });
+    if (mine > ADMIN_LIMITS.perSource) {
       await args.onLocked?.();
       return Response.json(
         { error: "locked", message: "Too many wrong attempts from this address. Try again in 15 minutes." },
         { status: 429, headers: { "Retry-After": String(ADMIN_LIMITS.windowMinutes * 60) } },
       );
     }
+    const everyone = await audit.countSince(FAILED, ADMIN_LIMITS.windowMinutes);
     if (everyone >= ADMIN_LIMITS.spikeAlert) await args.onSpike?.();
   } catch {
     logError("admin.audit_unavailable");
-    return unavailable(wait);
-  }
-
-  try {
-    await audit.record({ actor: "unknown", action: FAILED, outcome: "denied", sourceKey, target: action });
-  } catch {
-    logError("admin.audit_write_failed");
     return unavailable(wait);
   }
   return Response.json({ error: "Not allowed" }, { status: 401 });

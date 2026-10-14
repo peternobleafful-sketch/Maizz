@@ -1,6 +1,7 @@
 import { getAudit, sourceKeyFor } from "@/lib/audit";
 import { REFERENCE_PATTERN, toGiverStep } from "@/lib/checkout";
 import { logError } from "@/lib/log";
+import { rateSecret } from "@/lib/rateKey";
 import { getLedger, getPaymentProvider } from "@/lib/payments";
 
 export const runtime = "nodejs";
@@ -22,12 +23,11 @@ export async function POST(req: Request) {
 
   try {
     const audit = getAudit();
-    const secret = process.env.SETUP_CHECK_TOKEN ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? "maizz";
-    const source = sourceKeyFor(req, secret);
-    if ((await audit.countSince("checkout.code", 10, source)) >= 10) {
+    const source = sourceKeyFor(req, rateSecret(process.env));
+    const tries = await audit.hit({ action: "checkout.code", sourceKey: source, minutes: 10, actor: "giver", target: reference });
+    if (tries > 10) {
       return Response.json({ error: "Too many attempts. Please wait a few minutes and try again." }, { status: 429, headers: { "Retry-After": "600" } });
     }
-    await audit.record({ actor: "giver", action: "checkout.code", target: reference, sourceKey: source });
 
     const gift = await getLedger().findGiftByReference(reference);
     if (!gift) return Response.json({ error: "We could not find that gift." }, { status: 404 });

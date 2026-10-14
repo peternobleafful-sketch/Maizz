@@ -9,7 +9,7 @@ const GOOD_ENV = {
 };
 
 const ok = { status: 200, json: [] };
-const all200 = [ok, ...Array.from({ length: 7 }, () => ok), { status: 401, json: {} }, ok, ok, ok, { json: [{ id: 1 }] }];
+const all200 = [ok, ...Array.from({ length: 7 }, () => ok), { status: 401, json: {} }, ok, ok, ok, { json: [{ id: 1 }] }, { json: null }];
 
 function byId(results: Awaited<ReturnType<typeof runSetupChecks>>) {
   return Object.fromEntries(results.map((r) => [r.id, r]));
@@ -19,7 +19,7 @@ describe("setup check", () => {
   it("passes everything when settings are right", async () => {
     const m = mockFetch(all200);
     const r = byId(await runSetupChecks(GOOD_ENV, m.fn));
-    for (const id of ["paystack_key", "paystack_reach", "supabase_url", "supabase_key", "ledger", "locked", "church_accounts", "church_staff", "owner_dashboard", "reconcile", "live_test_data", "guard"]) {
+    for (const id of ["paystack_key", "paystack_reach", "supabase_url", "supabase_key", "ledger", "locked", "church_accounts", "church_staff", "owner_dashboard", "reconcile", "live_test_data", "atomic_limits", "guard"]) {
       expect(r[id]!.ok, `${id}: ${r[id]!.hint}`).toBe(true);
     }
   });
@@ -93,7 +93,7 @@ describe("setup check", () => {
 
 describe("setup check: daily check", () => {
   it("says when the daily check has not run yet", async () => {
-    const replies = [...all200.slice(0, -1), { json: [] }];
+    const replies = [...all200.slice(0, -2), { json: [] }, { json: null }];
     const r = byId(await runSetupChecks(GOOD_ENV, mockFetch(replies).fn));
     expect(r.reconcile!.ok).toBe(false);
     expect(r.reconcile!.hint).toMatch(/CRON_SECRET/);
@@ -102,7 +102,7 @@ describe("setup check: daily check", () => {
   it("asks the audit log only for recent runs of the daily check", async () => {
     const m = mockFetch(all200);
     await runSetupChecks(GOOD_ENV, m.fn);
-    const url = m.calls[m.calls.length - 1]!.url;
+    const url = m.calls.find((c) => c.url.includes("reconcile.run"))!.url;
     expect(url).toContain("audit_log?action=eq.reconcile.run");
     expect(url).toMatch(/at=gte\.\d{4}-/);
   });
@@ -110,7 +110,7 @@ describe("setup check: daily check", () => {
 
 describe("setup check: church accounts", () => {
   it("tells you to run the church accounts file when its columns are missing", async () => {
-    const replies = [...all200.slice(0, -4), { status: 400, json: {} }, ok, ok, { json: [{ id: 1 }] }];
+    const replies = [...all200.slice(0, -5), { status: 400, json: {} }, ok, ok, { json: [{ id: 1 }] }, { json: null }];
     const r = byId(await runSetupChecks(GOOD_ENV, mockFetch(replies).fn));
     expect(r.church_accounts!.ok).toBe(false);
     expect(r.church_accounts!.hint).toMatch(/0005/);
@@ -119,7 +119,7 @@ describe("setup check: church accounts", () => {
 
 describe("setup check: owner dashboard", () => {
   it("tells you to run 0008 when the owner tables are missing", async () => {
-    const replies = [...all200.slice(0, -2), { status: 404, json: {} }, { json: [{ id: 1 }] }];
+    const replies = [...all200.slice(0, -3), { status: 404, json: {} }, { json: [{ id: 1 }] }, { json: null }];
     const r = byId(await runSetupChecks(GOOD_ENV, mockFetch(replies).fn));
     expect(r.owner_dashboard!.ok).toBe(false);
     expect(r.owner_dashboard!.hint).toMatch(/0008/);
@@ -128,7 +128,7 @@ describe("setup check: owner dashboard", () => {
 
 describe("setup check: church sign-in", () => {
   it("tells you to run 0006 when the sign-in tables are missing", async () => {
-    const replies = [...all200.slice(0, -3), { status: 404, json: {} }, ok, { json: [{ id: 1 }] }];
+    const replies = [...all200.slice(0, -4), { status: 404, json: {} }, ok, { json: [{ id: 1 }] }, { json: null }];
     const r = byId(await runSetupChecks(GOOD_ENV, mockFetch(replies).fn));
     expect(r.church_staff!.ok).toBe(false);
     expect(r.church_staff!.hint).toMatch(/0006/);
@@ -149,7 +149,7 @@ describe("setup check: church sign-in", () => {
 describe("setup check: live key and test gifts", () => {
   const LIVE = { ...GOOD_ENV, PAYSTACK_SECRET_KEY: "sk_live_abc", MAIZZ_ALLOW_LIVE: "yes" };
   // Live key: Paystack is not asked, so the Supabase checks come first, then the test-gift question last.
-  const liveReplies = (testGifts: unknown[]) => [...Array.from({ length: 7 }, () => ok), { status: 401, json: {} }, ok, ok, ok, { json: [{ id: 1 }] }, { json: testGifts }];
+  const liveReplies = (testGifts: unknown[]) => [...Array.from({ length: 7 }, () => ok), { status: 401, json: {} }, ok, ok, ok, { json: [{ id: 1 }] }, { json: testGifts }, { json: null }];
 
   it("fails when the key is live and the database holds a test gift", async () => {
     const r = byId(await runSetupChecks(LIVE, mockFetch(liveReplies([{ id: "g1" }])).fn));
@@ -163,12 +163,28 @@ describe("setup check: live key and test gifts", () => {
   });
 
   it("does not pass by luck when it could not look", async () => {
-    const r = byId(await runSetupChecks(LIVE, mockFetch(liveReplies([]).slice(0, -1)).fn));
+    const r = byId(await runSetupChecks(LIVE, mockFetch(liveReplies([]).slice(0, -2)).fn));
     expect(r.live_test_data!.ok).toBe(false);
   });
 
   it("is fine with a test key", async () => {
     const r = byId(await runSetupChecks(GOOD_ENV, mockFetch(all200).fn));
     expect(r.live_test_data!.ok).toBe(true);
+  });
+});
+
+describe("setup check: atomic counters and rate secret", () => {
+  it("says when 0010 has not been run", async () => {
+    const replies = all200.slice(0, -1).concat([{ status: 404, json: {} } as never]);
+    const r = byId(await runSetupChecks(GOOD_ENV, mockFetch(replies).fn));
+    expect(r.atomic_limits!.ok).toBe(false);
+    expect(r.atomic_limits!.hint).toMatch(/0010/);
+  });
+
+  it("asks for RATE_LIMIT_SECRET until a long one is set", async () => {
+    const without = byId(await runSetupChecks(GOOD_ENV, mockFetch(all200).fn));
+    expect(without.rate_secret!.ok).toBe(false);
+    const withIt = byId(await runSetupChecks({ ...GOOD_ENV, RATE_LIMIT_SECRET: "r".repeat(40) }, mockFetch(all200).fn));
+    expect(withIt.rate_secret!.ok).toBe(true);
   });
 });

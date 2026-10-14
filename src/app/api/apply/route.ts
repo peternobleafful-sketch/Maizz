@@ -42,14 +42,14 @@ export async function POST(req: Request) {
   try {
     const audit = getAudit();
     const source = sourceOf(req);
-    if ((await audit.countSince("church.apply", 24 * 60, source)) >= LIMIT_PER_DAY) {
+    // Counted and recorded in one atomic step, so simultaneous requests cannot slip past the daily limit.
+    if ((await audit.hit({ action: "church.apply", sourceKey: source, minutes: 24 * 60, actor: "public" })) > LIMIT_PER_DAY) {
       return reply(429, "Too many applications from this connection today. Please try again tomorrow.");
     }
     const data = getOwnerData();
     if ((await data.listApplications()).filter((a) => a.status === "new").length >= MAX_WAITING) {
       return reply(503, "We are not taking new applications right now. Please try again soon.");
     }
-    await audit.record({ actor: "public", action: "church.apply", outcome: "ok", sourceKey: source });
     await data.createApplication({ churchName, town, contactName, contactEmail: email, contactPhone: phone, note });
     await getNotifier().alert("church_application", "A church applied to join Maizz", [
       "A new church application is waiting for you.",

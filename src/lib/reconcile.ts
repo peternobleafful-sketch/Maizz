@@ -96,6 +96,10 @@ export async function settleGift(args: {
 }
 
 export interface ReconcileSummary {
+  /** Gifts closed as abandoned or failed in the last 3 days that were asked about again. */
+  closedChecked: number;
+  /** Of those, how many the provider now says were paid (recorded as paid). */
+  latePaymentsRecovered: number;
   checkedPending: number;
   settledPaid: number;
   settledFailed: number;
@@ -123,6 +127,7 @@ async function inChunks<T>(items: T[], deadline: number, work: (item: T) => Prom
  * The daily check:
  *  1. Every gift still waiting for an answer (10 minutes to 3 days old) is settled with the provider.
  *  2. Every gift paid in the last 3 days is asked about again: the provider must still say paid, for the exact amount.
+ *  3. Every gift closed as abandoned or failed in the last 3 days is asked about again; a late payment is recorded.
  * Anything odd is written to the audit log as an alert. A summary is always written, so a missed day is visible.
  */
 export async function reconcile(args: {
@@ -137,6 +142,8 @@ export async function reconcile(args: {
   const clock = args.now ?? Date.now;
   const deadline = Date.now() + TIME_BUDGET_MS;
   const s: ReconcileSummary = {
+    closedChecked: 0,
+    latePaymentsRecovered: 0,
     checkedPending: 0,
     settledPaid: 0,
     settledFailed: 0,
@@ -190,7 +197,27 @@ export async function reconcile(args: {
     }
   });
 
-  s.incomplete = !(doneWaiting && donePaid) || waiting.length >= 100 || paid.length >= 100;
+  // A giver may approve after we gave up and the notice may have been lost: look again at gifts closed in the last 3 days.
+  const closed = await ledger.listClosedUnpaid({ sinceDays: 3, limit: 100 });
+  const doneClosed = await inChunks(closed, deadline, async (gift) => {
+    try {
+      s.closedChecked += 1;
+      const answer = await ask(provider, gift.reference);
+      if (answer?.status !== "succeeded") return;
+      // Recording, the amount check, the receipt and the alert are the same as for any waiting gift.
+      const out = await settleGift({ ledger, provider, audit, gift, now: clock(), notify });
+      if (out === "paid") {
+        s.latePaymentsRecovered += 1;
+        await audit.record({ actor: "reconcile", action: "reconcile.late_payment_recorded", outcome: "ok", target: gift.reference });
+      } else if (out === "mismatch") s.mismatches += 1;
+      else if (out === "error") s.errors += 1;
+    } catch (err) {
+      logError("reconcile.closed_check_failed", { reason: err instanceof Error ? err.message : "unknown" });
+      s.errors += 1;
+    }
+  });
+
+  s.incomplete = !(doneWaiting && donePaid && doneClosed) || waiting.length >= 100 || paid.length >= 100 || closed.length >= 100;
   const odd = s.mismatches + s.paidNotConfirmed + s.errors > 0 || s.incomplete;
   await audit.record({
     actor: "reconcile",

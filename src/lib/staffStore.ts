@@ -80,6 +80,13 @@ export function createSupabaseStaffStore(opts: {
     return j;
   }
 
+  async function count(res: Response, what: string): Promise<number> {
+    if (!res.ok) throw new StaffError("unavailable", `Database refused ${what} (${res.status})`);
+    const n: unknown = await res.json().catch(() => NaN);
+    if (typeof n !== "number" || !Number.isSafeInteger(n) || n < 1) throw new StaffError("unavailable", `Unreadable ${what}`);
+    return n;
+  }
+
   const q = encodeURIComponent;
   const iso = (t: number) => new Date(t).toISOString();
 
@@ -145,8 +152,11 @@ export function createSupabaseStaffStore(opts: {
       );
       return (await rows(res, "token use")).length === 1;
     },
-    async setTokenAttempts(id, attempts) {
-      await rows(await request("PATCH", `${tokensTable}?id=eq.${q(id)}`, { attempts }, "return=representation"), "token update");
+    async incrementTokenAttempts(id) {
+      return count(await request("POST", "rpc/maizz_code_attempt", { p_token: id, p_area: owner ? "owner" : "church" }), "code attempt count");
+    },
+    async incrementFailures(userId) {
+      return count(await request("POST", "rpc/maizz_staff_fail", { p_user: userId, p_area: owner ? "owner" : "church" }), "wrong attempt count");
     },
     async revokeTokens(userId, kind) {
       await rows(

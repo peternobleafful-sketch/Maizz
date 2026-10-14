@@ -113,8 +113,8 @@ describe("admin gate: attempt limits", () => {
     const locked = await gate(audit, req({ token: "wrong" }));
     expect(locked!.status).toBe(429);
     expect(locked!.headers.get("retry-after")).toBe("900");
-    // A locked wrong attempt is not recorded as another failure.
-    expect(audit.actions().filter((a) => a === "admin.auth_failed")).toHaveLength(ADMIN_LIMITS.perSource);
+    // Every wrong attempt is recorded, including the one that was locked out.
+    expect(audit.actions().filter((a) => a === "admin.auth_failed")).toHaveLength(ADMIN_LIMITS.perSource + 1);
     // The right secret always goes through, and is audited.
     expect(await gate(audit, req({ token: TOKEN }))).toBeNull();
     expect(audit.actions().filter((a) => a === "admin.setup_check")).toHaveLength(1);

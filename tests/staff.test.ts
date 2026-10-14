@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   createStaffService,
+  STAFF_LIMITS,
   hashPassword,
   passwordProblem,
   verifyPassword,
@@ -119,31 +120,76 @@ describe("two-step sign-in", () => {
     expect(sent.length).toBe(before);
   });
 
-  it("a wrong code is refused, and five wrong codes lock the person", async () => {
+  it("a code gets five tries in all, then is dead; the person can still sign in again", async () => {
     await activeUser();
     const one = await svc.signIn("ama@church.org", PASSWORD, "src");
     if (!one.ok) throw new Error("expected ok");
     const right = codeFromMail();
     const wrong = right === "000000" ? "111111" : "000000";
-    for (let i = 0; i < 5; i++) expect(await svc.verifyCode(one.challenge, wrong, `s${i}`)).toMatchObject({ ok: false });
-    expect(await svc.verifyCode(one.challenge, right, "s9")).toMatchObject({ ok: false });
-    expect(await svc.signIn("ama@church.org", PASSWORD, "s10")).toEqual({ ok: false, reason: "locked" });
-    clock += 16 * 60_000;
-    expect((await svc.signIn("ama@church.org", PASSWORD, "s11")).ok).toBe(true);
+    for (let i = 0; i < 5; i++) expect(await svc.verifyCode(one.challenge, wrong, `s${i}`)).toEqual({ ok: false, reason: "wrong" });
+    expect(await svc.verifyCode(one.challenge, right, "s9")).toEqual({ ok: false, reason: "expired" });
+    expect((await svc.signIn("ama@church.org", PASSWORD, "s10")).ok).toBe(true);
   });
 
-  it("five wrong passwords lock the person, even for the right password", async () => {
+  it("five wrong passwords from one place do not stop the person signing in from another place", async () => {
     await activeUser();
-    for (let i = 0; i < 5; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", `s${i}`);
-    expect(await svc.signIn("ama@church.org", PASSWORD, "s9")).toEqual({ ok: false, reason: "locked" });
+    for (let i = 0; i < 5; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", "attacker");
+    expect((await svc.signIn("ama@church.org", PASSWORD, "home")).ok).toBe(true);
+  });
+
+  it("a place that keeps trying at one person is stopped for that person only, and is told it is a wrong password", async () => {
+    await activeUser();
+    for (let i = 0; i < STAFF_LIMITS.personSourceAttempts; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", "attacker");
+    expect(await svc.signIn("ama@church.org", PASSWORD, "attacker")).toEqual({ ok: false, reason: "wrong" });
+    expect((await svc.signIn("ama@church.org", PASSWORD, "home")).ok).toBe(true);
+  });
+
+  it("20 wrong tries from many places lock the person for everyone, and raise one alert", async () => {
+    const alerts: string[] = [];
+    svc = createStaffService({ store, audit, mailer, pepper: PEPPER, now: () => clock, alert: async (k) => void alerts.push(k) });
+    await activeUser();
+    for (let i = 0; i < STAFF_LIMITS.personFailures; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", `place${i}`);
     expect(audit.actions()).toContain("staff.locked");
+    expect(alerts).toEqual(["staff_locked"]);
+    expect(await svc.signIn("ama@church.org", PASSWORD, "home")).toEqual({ ok: false, reason: "wrong" });
+    clock += 16 * 60_000;
+    expect((await svc.signIn("ama@church.org", PASSWORD, "home")).ok).toBe(true);
   });
 
-  it("many wrong tries from one place lock that place, whoever they try", async () => {
+  it("a locked person and an email with no account get exactly the same answer", async () => {
     await activeUser();
-    for (let i = 0; i < 10; i++) await svc.signIn(`ghost${i}@church.org`, "wrong wrong wrong", "same");
+    for (let i = 0; i < STAFF_LIMITS.personFailures; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", `place${i}`);
+    const locked = await svc.signIn("ama@church.org", PASSWORD, "fresh1");
+    const unknown = await svc.signIn("nobody@church.org", PASSWORD, "fresh2");
+    expect(locked).toEqual(unknown);
+    expect(locked).toEqual({ ok: false, reason: "wrong" });
+  });
+
+  it("many tries from one place lock that place, whoever they try", async () => {
+    await activeUser();
+    for (let i = 0; i < STAFF_LIMITS.sourceAttempts; i++) await svc.signIn(`ghost${i}@church.org`, "wrong wrong wrong", "same");
     expect(await svc.signIn("ama@church.org", PASSWORD, "same")).toEqual({ ok: false, reason: "locked" });
     expect((await svc.signIn("ama@church.org", PASSWORD, "elsewhere")).ok).toBe(true);
+  });
+
+  it("a burst of 60 simultaneous wrong passwords from one place gets only a handful of real tries", async () => {
+    await activeUser();
+    const results = await Promise.all(Array.from({ length: 60 }, () => svc.signIn("ama@church.org", "wrong wrong wrong", "burst")));
+    expect(results.every((r) => !r.ok)).toBe(true);
+    expect(store.users[0]!.failedAttempts).toBe(STAFF_LIMITS.personSourceAttempts);
+  });
+
+  it("a burst of simultaneous code guesses gets only five looks in all", async () => {
+    await activeUser();
+    const one = await svc.signIn("ama@church.org", PASSWORD, "src");
+    if (!one.ok) throw new Error("expected ok");
+    const right = codeFromMail();
+    const guesses = Array.from({ length: 40 }, (_, i) => String(i).padStart(6, "0")).filter((g) => g !== right);
+    // Every guess comes from a different place, so only the per-code limit can stop them.
+    await Promise.all(guesses.map((g, i) => svc.verifyCode(one.challenge, g, `g${i}`)));
+    expect(store.tokens.find((t) => t.id === one.challenge)!.attempts).toBe(guesses.length);
+    expect(store.users[0]!.failedAttempts).toBe(STAFF_LIMITS.codeTries);
+    expect(await svc.verifyCode(one.challenge, right, "late")).toEqual({ ok: false, reason: "expired" });
   });
 
   it("a code works once and expires after 10 minutes", async () => {
@@ -265,7 +311,7 @@ describe("password reset", () => {
     const alerts: string[] = [];
     svc = createStaffService({ store, audit, mailer, pepper: PEPPER, now: () => clock, alert: async (k) => void alerts.push(k) });
     await activeUser();
-    for (let i = 0; i < 5; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", `s${i}`);
+    for (let i = 0; i < STAFF_LIMITS.personFailures; i++) await svc.signIn("ama@church.org", "wrong wrong wrong", `s${i}`);
     expect(alerts).toEqual(["staff_locked"]);
   });
 });

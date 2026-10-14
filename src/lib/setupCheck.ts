@@ -231,7 +231,32 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
     } else {
       add("live_test_data", "Live key with test gifts in the database", true, "Not a live key, so test gifts here are expected. This check matters once a live key is used.");
     }
+
+    // 0010 adds the atomic attempt counters. This asks for a code that does not exist, so nothing is written.
+    let counters: number | null = null;
+    try {
+      const res = await fetchFn(`${rawUrl}/rest/v1/rpc/maizz_code_attempt`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ p_token: "00000000-0000-0000-0000-000000000000", p_area: "owner" }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      counters = res.status;
+    } catch {
+      counters = null;
+    }
+    add(
+      "atomic_limits",
+      "Attempt counters are installed",
+      counters === 200,
+      counters === 200
+        ? "The attempt counters were found."
+        : counters === 404
+          ? "Not found. Run 0010_atomic_limits_retention.sql (in supabase/migrations) in the Supabase SQL Editor."
+          : "Could not check just now. Try again in a minute.",
+    );
   } else {
+    add("atomic_limits", "Attempt counters are installed", false, "Fix the Supabase settings above first.");
     add("live_test_data", "Live key with test gifts in the database", kind !== "live", kind === "live" ? "Fix the Supabase settings above first." : "Not a live key, so test gifts here are expected.");
     add("ledger", "Ledger and audit log are installed and reachable", false, "Fix the Supabase settings above first.");
     add("locked", "Ledger refuses requests with no key", false, "Fix the Supabase settings above first.");
@@ -248,6 +273,15 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
     "Church sign-in secret is set",
     stafSecret,
     stafSecret ? "STAFF_SECRET is set." : "Add STAFF_SECRET in Vercel (Production): a long random string, at least 32 characters.",
+  );
+  const rateOk = (env.RATE_LIMIT_SECRET?.trim().length ?? 0) >= 32;
+  add(
+    "rate_secret",
+    "Rate-limit secret is set",
+    rateOk,
+    rateOk
+      ? "RATE_LIMIT_SECRET is set."
+      : "Add RATE_LIMIT_SECRET in Vercel (Production): a long random string, at least 32 characters. Until then a key is borrowed from another secret.",
   );
   const alertOk = Boolean(env.ALERT_EMAIL?.trim().includes("@")) && Boolean(env.RESEND_API_KEY?.trim() && env.MAIZZ_FROM_EMAIL?.trim());
   add(

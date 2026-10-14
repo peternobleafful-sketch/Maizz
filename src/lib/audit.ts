@@ -19,6 +19,12 @@ export interface AuditLog {
   record(entry: AuditEntry): Promise<void>;
   /** How many records with this action in the last N minutes (optionally from one source). */
   countSince(action: string, minutes: number, sourceKey?: string): Promise<number>;
+  /**
+   * Records one attempt and returns how many this action and source have had in the last N minutes, including this one.
+   * Recording and counting happen in one database step, so a burst of simultaneous requests cannot all see "0 so far".
+   * Refuse the request when the returned number is over the limit.
+   */
+  hit(args: { action: string; sourceKey: string; minutes: number; outcome?: AuditOutcome; target?: string; actor?: string }): Promise<number>;
 }
 
 export class AuditError extends Error {}
@@ -90,6 +96,25 @@ export function createSupabaseAudit(opts: { url: string; serviceKey: string; fet
         }),
       });
       if (res.status !== 201) throw new AuditError(`Audit log refused the record (${res.status})`);
+    },
+
+    async hit({ action, sourceKey, minutes, outcome, target, actor }) {
+      const res = await send(`${opts.url.replace(/\/+$/, "")}/rest/v1/rpc/maizz_hit`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          p_action: action,
+          p_source_key: sourceKey,
+          p_minutes: minutes,
+          p_outcome: outcome ?? "ok",
+          p_target: target ?? null,
+          p_actor: actor ?? "system",
+        }),
+      });
+      if (!res.ok) throw new AuditError(`Audit log refused the attempt count (${res.status})`);
+      const n: unknown = await res.json().catch(() => NaN);
+      if (typeof n !== "number" || !Number.isSafeInteger(n) || n < 1) throw new AuditError("Audit log gave an unreadable attempt count");
+      return n;
     },
 
     async countSince(action, minutes, sourceKey) {

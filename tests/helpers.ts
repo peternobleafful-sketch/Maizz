@@ -66,7 +66,7 @@ export class FakeLedger implements Ledger {
   churches = new Map<string, ChurchRecord>();
   maizzFees = new Map<string, number>();
   giftGivers = new Map<string, string | undefined>();
-  givers: { id: string; fullName: string; phone: string; email?: string }[] = [];
+  givers: { id: string; fullName: string; phone: string; email?: string; removed?: boolean }[] = [];
   giftTypes = new Map<string, string>();
 
   async findChurch(slug: string): Promise<ChurchRecord | null> {
@@ -187,6 +187,39 @@ export class FakeLedger implements Ledger {
     return out.slice(0, o.limit);
   }
 
+  async listClosedUnpaid(o: { sinceDays: number; limit: number }): Promise<GiftRecord[]> {
+    const out: GiftRecord[] = [];
+    for (const g of [...this.gifts].reverse()) {
+      if (this.now() - Date.parse(g.createdAt) > o.sinceDays * 86_400_000) continue;
+      const s = await this.currentStatus(g.reference);
+      if (s && !s.wasPaid && (s.status === "abandoned" || s.status === "failed")) out.push(g);
+    }
+    return out.slice(0, o.limit);
+  }
+
+  async anonymiseGiver(giverId: string): Promise<boolean> {
+    const g = this.givers.find((x) => x.id === giverId);
+    if (!g || g.removed) return false;
+    g.removed = true;
+    g.fullName = "";
+    g.phone = "";
+    delete g.email;
+    return true;
+  }
+
+  async anonymiseGiverOfGift(reference: string): Promise<"done" | "already" | "no_giver" | "not_found"> {
+    if (!this.gifts.some((g) => g.reference === reference)) return "not_found";
+    const id = this.giftGivers.get(reference);
+    if (!id) return "no_giver";
+    return (await this.anonymiseGiver(id)) ? "done" : "already";
+  }
+
+  cleanUps: { giverDays: number; applicationDays: number }[] = [];
+  async cleanUpOldDetails(p: { giverDays: number; applicationDays: number }) {
+    this.cleanUps.push(p);
+    return { givers: 0, applications: 0 };
+  }
+
   async listRecentPaid(o: { sinceDays: number; limit: number }): Promise<GiftRecord[]> {
     const out: GiftRecord[] = [];
     for (const g of this.gifts) {
@@ -207,6 +240,13 @@ export class FakeAudit implements AuditLog {
   async record(entry: AuditEntry): Promise<void> {
     if (this.failWrites) throw new Error("audit down");
     this.entries.push({ ...entry, at: Date.now() });
+  }
+
+  async hit(a: { action: string; sourceKey: string; minutes: number; outcome?: AuditEntry["outcome"]; target?: string; actor?: string }): Promise<number> {
+    if (this.failWrites) throw new Error("audit down");
+    this.entries.push({ actor: a.actor ?? "system", action: a.action, target: a.target, outcome: a.outcome ?? "ok", sourceKey: a.sourceKey, at: Date.now() });
+    const cutoff = Date.now() - a.minutes * 60_000;
+    return this.entries.filter((e) => e.action === a.action && e.sourceKey === a.sourceKey && e.at >= cutoff).length;
   }
 
   async countSince(action: string, minutes: number, sourceKey?: string): Promise<number> {
@@ -266,8 +306,15 @@ export class FakeStaffStore implements StaffStore {
     t.usedAt = 1;
     return true;
   }
-  async setTokenAttempts(id: string, attempts: number) {
-    this.tokens.find((x) => x.id === id)!.attempts = attempts;
+  async incrementTokenAttempts(id: string) {
+    const t = this.tokens.find((x) => x.id === id)!;
+    t.attempts += 1;
+    return t.attempts;
+  }
+  async incrementFailures(userId: string) {
+    const u = this.users.find((x) => x.id === userId)!;
+    u.failedAttempts += 1;
+    return u.failedAttempts;
   }
   async revokeTokens(userId: string, kind: TokenKind) {
     for (const t of this.tokens) if (t.userId === userId && t.kind === kind && t.usedAt === null) t.usedAt = 1;

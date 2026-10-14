@@ -203,3 +203,63 @@ describe("refunded gifts in the daily check", () => {
     expect(audit.actions()).toEqual(["reconcile.run"]);
   });
 });
+
+describe("gifts closed too early (abandoned or failed) in the daily check", () => {
+  it("records an abandoned gift as paid once, when the provider now says paid for the exact amount", async () => {
+    const g = await gift("mz_dddddddd", 60 * 24);
+    await ledger.addEvent({ giftId: g.id, status: "abandoned" });
+    answers.set(g.reference, answer(g.reference));
+    const sent: string[] = [];
+    const notify = { paid: async (x: { reference: string }) => void sent.push(x.reference), alert: async () => undefined };
+
+    const first = await reconcile({ ledger, provider: fakeProvider(), audit, now: () => clock, notify });
+    expect(first).toMatchObject({ closedChecked: 1, latePaymentsRecovered: 1, mismatches: 0 });
+    expect(await ledger.currentStatus(g.reference)).toMatchObject({ status: "succeeded", wasPaid: true });
+    expect(audit.actions()).toContain("reconcile.late_payment_recorded");
+
+    // Tomorrow's run finds nothing more to do, and no second receipt goes out.
+    const second = await reconcile({ ledger, provider: fakeProvider(), audit, now: () => clock, notify });
+    expect(second.latePaymentsRecovered).toBe(0);
+    expect(sent).toEqual([g.reference]);
+    expect(ledger.events.filter((e) => e.giftId === g.id && e.status === "succeeded")).toHaveLength(1);
+  });
+
+  it("recovers a failed gift too, but leaves it alone while the provider says nothing new", async () => {
+    const failed = await gift("mz_eeeeeeee", 120);
+    await ledger.addEvent({ giftId: failed.id, status: "failed" });
+    const quiet = await gift("mz_ffffffff", 120);
+    await ledger.addEvent({ giftId: quiet.id, status: "abandoned" });
+    answers.set(failed.reference, answer(failed.reference));
+    answers.set(quiet.reference, answer(quiet.reference, { status: "abandoned" }));
+    const s = await reconcile({ ledger, provider: fakeProvider(), audit, now: () => clock });
+    expect(s).toMatchObject({ closedChecked: 2, latePaymentsRecovered: 1 });
+    expect((await ledger.currentStatus(quiet.reference))!.status).toBe("abandoned");
+  });
+
+  it("does not record a late payment of the wrong amount, and raises an alert", async () => {
+    const g = await gift("mz_gggggggg", 300);
+    await ledger.addEvent({ giftId: g.id, status: "abandoned" });
+    answers.set(g.reference, answer(g.reference, { amountPesewas: 500 }));
+    const alerts: string[] = [];
+    const s = await reconcile({ ledger, provider: fakeProvider(), audit, now: () => clock, notify: { paid: async () => undefined, alert: async (k) => void alerts.push(k) } });
+    expect(s).toMatchObject({ latePaymentsRecovered: 0, mismatches: 1 });
+    expect((await ledger.currentStatus(g.reference))!.wasPaid).toBe(false);
+    expect(alerts).toContain("amount_mismatch");
+  });
+
+  it("ignores gifts closed more than 3 days ago", async () => {
+    const g = await gift("mz_hhhhhhhh", 60 * 24 * 5);
+    await ledger.addEvent({ giftId: g.id, status: "abandoned" });
+    answers.set(g.reference, answer(g.reference));
+    expect((await reconcile({ ledger, provider: fakeProvider(), audit, now: () => clock })).closedChecked).toBe(0);
+  });
+
+  it("counts a provider failure as an error, not as a payment", async () => {
+    const g = await gift("mz_iiiiiiii", 300);
+    await ledger.addEvent({ giftId: g.id, status: "abandoned" });
+    answers.set(g.reference, "boom");
+    const s = await reconcile({ ledger, provider: fakeProvider(), audit, now: () => clock });
+    expect(s.errors).toBe(1);
+    expect(s.latePaymentsRecovered).toBe(0);
+  });
+});

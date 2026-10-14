@@ -1,4 +1,6 @@
 import { getAudit, sourceKeyFor, type AuditLog } from "@/lib/audit";
+import { checkStartLimits } from "@/lib/checkoutLimits";
+import { phoneKey, rateSecret } from "@/lib/rateKey";
 import { CheckoutError, parseCheckout, startCheckout } from "@/lib/checkout";
 import { classifyPaystackKey } from "@/lib/config";
 import { logError } from "@/lib/log";
@@ -8,7 +10,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_BODY = 5_000;
-const START_LIMIT = { perSource: 8, minutes: 10 };
 
 /** Public. Starts a mobile money gift. Limited per source, and refuses if the audit log is down. */
 export async function POST(req: Request) {
@@ -19,8 +20,13 @@ export async function POST(req: Request) {
     return Response.json({ error: "Giving is not available right now. Please try again shortly." }, { status: 503 });
   }
 
-  const secret = process.env.SETUP_CHECK_TOKEN ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? "maizz";
-  const source = sourceKeyFor(req, secret);
+  let source: string;
+  try {
+    source = sourceKeyFor(req, rateSecret(process.env));
+  } catch {
+    logError("checkout.rate_secret_missing");
+    return Response.json({ error: "Giving is not available right now. Please try again shortly." }, { status: 503 });
+  }
 
   const text = await req.text();
   if (text.length > MAX_BODY) return Response.json({ error: "That request is too large." }, { status: 413 });
@@ -34,9 +40,15 @@ export async function POST(req: Request) {
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
 
   try {
-    const recent = await audit.countSince("checkout.started", START_LIMIT.minutes, source);
-    if (recent >= START_LIMIT.perSource) {
+    const refused = await checkStartLimits(audit, source, phoneKey(parsed.input.phone, process.env));
+    if (refused === "source") {
       return Response.json({ error: "Too many attempts. Please wait a few minutes and try again." }, { status: 429, headers: { "Retry-After": "600" } });
+    }
+    if (refused === "phone") {
+      return Response.json(
+        { error: "This number has had several gift requests in the last hour. Please wait a little before trying again." },
+        { status: 429, headers: { "Retry-After": "3600" } },
+      );
     }
 
     const keyKind = classifyPaystackKey(process.env.PAYSTACK_SECRET_KEY);
