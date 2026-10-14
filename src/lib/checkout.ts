@@ -1,3 +1,4 @@
+import { churchMemberKey, verifyMemberLink } from "./memberLink";
 import { addFees, type FeeBreakdown } from "./fees";
 import { GIFT_TYPES, type GiftType, type Ledger } from "./ledger";
 import { logError } from "./log";
@@ -53,6 +54,8 @@ export interface CheckoutInput {
   email?: string;
   phone: string;
   network: MobileMoneyNetwork;
+  /** From a Church Manager "Give now" link: what the link said. Checked (signature, expiry, church switched on) in startCheckout. */
+  member?: { ref: string; expires: number; signature: string };
 }
 
 export type ParsedCheckout = { ok: true; input: CheckoutInput } | { ok: false; error: string };
@@ -98,7 +101,14 @@ export function parseCheckout(raw: unknown): ParsedCheckout {
     email = e;
   }
 
-  return { ok: true, input: { churchSlug, amountPesewas: amount, giftType, anonymous, fullName, email, phone, network } };
+  // A Church Manager link, if the page carried one. A badly shaped one is simply ignored: the gift still goes ahead, untagged.
+  let member: CheckoutInput["member"];
+  const m = typeof b.member === "object" && b.member !== null ? (b.member as Record<string, unknown>) : null;
+  if (m && typeof m.ref === "string" && typeof m.signature === "string" && typeof m.expires === "number") {
+    member = { ref: m.ref, expires: m.expires, signature: m.signature };
+  }
+
+  return { ok: true, input: { churchSlug, amountPesewas: amount, giftType, anonymous, fullName, email, phone, network, member } };
 }
 
 export type GiverStep =
@@ -147,6 +157,8 @@ export async function startCheckout(args: {
   live?: boolean;
   /** A mailbox Maizz owns, used when the giver gave no email. Required with a live key. */
   standInEmail?: string;
+  /** MEMBER_LINK_MASTER_KEY, when set. Without it a Church Manager link is ignored and the gift is untagged. */
+  memberLinkMaster?: string | null;
 }): Promise<CheckoutStarted> {
   const { ledger, provider, input, testMode } = args;
   if (args.live && (await ledger.hasTestGifts())) throw new LiveGuardError();
@@ -161,6 +173,15 @@ export async function startCheckout(args: {
   // without one take a (test) gift. This stops real money landing in Maizz's account by mistake.
   if (!church.subaccountCode && !testMode) throw unavailable;
 
+  // A genuine Church Manager link tags the gift with that member's opaque reference. Never for an anonymous gift:
+  // anonymous means nothing links the gift to the giver, not even in Church Manager's own history.
+  let memberRef: string | undefined;
+  if (!input.anonymous && input.member && args.memberLinkMaster && church.memberLinkEnabled) {
+    const key = churchMemberKey(args.memberLinkMaster, church.id, church.memberLinkVersion);
+    memberRef =
+      verifyMemberLink(key, church.slug, { member: input.member.ref, expires: input.member.expires, signature: input.member.signature }, Date.now()) ?? undefined;
+  }
+
   const fees = addFees(input.amountPesewas);
   const giverId = input.anonymous
     ? undefined
@@ -171,6 +192,7 @@ export async function startCheckout(args: {
     reference,
     churchId: church.id,
     giverId,
+    memberRef,
     giftType: input.giftType,
     amountPesewas: fees.giftPesewas,
     feePesewas: fees.feePesewas,

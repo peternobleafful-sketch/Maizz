@@ -22,6 +22,7 @@ Card numbers and mobile money PINs. Cards are entered on our payment partner's p
 - **Your church** sees the gift (amount, date, type) and, unless you gave anonymously, your name. Church staff do not see your phone number.
 - **Our payment partner** handles the payment and sees what it needs to take it.
 - **Maizz** can see gift records to run the service and settle disputes.
+- If you reach Maizz from your church's Church Manager app and give with your name, the gift is tagged with a private member code from that app so your church's app can show you your own giving. The code has no name, number or email in it, and anonymous gifts are never tagged.
 - We do not sell your details or use them for advertising.
 
 ## How long we keep it
@@ -29,6 +30,8 @@ Card numbers and mobile money PINs. Cards are entered on our payment partner's p
 - A giver whose gift completed: [lawyer: how long records of completed gifts must be kept, for example for accounting and tax, and whether names can be removed earlier while the amounts stay in the books].
 - Church applications that were declined: contact details removed after 90 days.
 - Short-lived abuse counters: deleted within two days.
+
+[lawyer: the member code stays on the gift record for good. Is it personal data for erasure, and what should we say?]
 
 ## Your rights
 You can ask to see what we hold about you, to correct it, or to have it removed (we remove personal details; the amounts stay in the books because the law requires records of money). Write to [privacy email]. We will answer within [lawyer: period]. You can also complain to the Data Protection Commission.

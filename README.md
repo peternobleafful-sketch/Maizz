@@ -90,7 +90,7 @@ People who sign in for a church are added from the owner tools (setup check page
 
 ## Step 9, part 2: church dashboard
 
-Signed-in church people see: Overview (last 7 days, this month, all time, by gift type, latest gifts), Gifts (filters, detail, CSV for finance and owners), Payouts (payout account, totals; payout history later), Team and Settings (owners), and a printable QR share card. Pages are in `src/app/church/(app)`. Roles: viewer, finance, owner. Payout history, receipts, password reset and pausing giving are done (see below). Still to do: the Church Manager "My giving" link (step 8).
+Signed-in church people see: Overview (last 7 days, this month, all time, by gift type, latest gifts), Gifts (filters, detail, CSV for finance and owners), Payouts (payout account, totals; payout history later), Team and Settings (owners), and a printable QR share card. Pages are in `src/app/church/(app)`. Roles: viewer, finance, owner. Payout history, receipts, password reset and pausing giving are done (see below). The Church Manager "My giving" link (step 8) is built; see `docs/CHURCH_MANAGER_LINK.md`.
 
 ## Alerts, receipts, password reset and backups
 
@@ -158,6 +158,6 @@ Needs migration `0013_counters_and_payout_rule.sql` (run it in Supabase **before
 - **No lock-out by strangers:** wrong passwords never lock a person. Each address is limited on its own, and many wrong guesses send Maizz an alert.
 - **Counters apart from the permanent log:** attempt counters are in `limit_hits`, emptied every night.
 - **Live key, owner dashboard:** shut until the authenticator app is on.
-- **New Vercel settings (Production, Sensitive):** `TOTP_KEY` (32+ random characters, different from `STAFF_SECRET`), and before a live key `PROVIDER_STAND_IN_EMAIL` (a mailbox Maizz owns).
+- **New Vercel settings (Production, Sensitive):** `TOTP_KEY` (32+ random characters, different from `STAFF_SECRET`), and before a live key `PROVIDER_STAND_IN_EMAIL` (a mailbox Maizz owns). For step 8, `MEMBER_LINK_MASTER_KEY` (32+ random characters, Production, Sensitive; the link is off everywhere without it).
 - **Database rule:** a church's payout account cannot be changed while the church is active; suspend it first (then the 24-hour wait applies).
 - **Smaller:** team invites capped at 20 a day per church; applications are alerted at 100 instead of refused; request bodies have a size cap; the caller's address comes from Vercel's own header; GitHub Actions are pinned to commit versions; public pages are built per visit so the safety policy can mark them.

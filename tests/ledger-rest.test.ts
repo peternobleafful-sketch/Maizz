@@ -122,9 +122,13 @@ describe("supabase ledger: churches and givers", () => {
       payoutAccountLast4: null,
       payoutAccountName: null,
       paused: false,
+      memberLinkEnabled: false,
+      memberLinkVersion: 1,
     });
     expect(await l.findChurch("nope")).toBeNull();
     expect(calls[0]!.url).toContain("giving_paused");
+    expect(calls[0]!.url).toContain("member_link_enabled");
+    expect(calls[0]!.url).toContain("member_link_version");
     expect(calls.every((c) => c.method === "GET")).toBe(true);
   });
 

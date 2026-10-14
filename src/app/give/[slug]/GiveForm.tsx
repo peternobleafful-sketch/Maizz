@@ -18,6 +18,8 @@ export default function GiveForm(props: {
   churchName: string;
   testMode: boolean;
   types: { value: string; label: string }[];
+  /** From a genuine Church Manager link: the gift is then listed in that member's "My giving". */
+  memberLink?: { ref: string; expires: number; signature: string };
 }) {
   const [amountText, setAmountText] = useState("");
   const [giftType, setGiftType] = useState("tithe");
@@ -87,6 +89,7 @@ export default function GiveForm(props: {
           email: anonymous ? undefined : email.trim() || undefined,
           phone,
           network,
+          member: anonymous ? undefined : props.memberLink,
         }),
       });
       const data: { error?: string; reference?: string; totalPesewas?: number; step?: { kind: string; message?: string } } =

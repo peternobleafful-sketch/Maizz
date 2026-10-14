@@ -291,6 +291,15 @@ export async function runSetupChecks(env: Env, fetchFn: Fetch = fetch): Promise<
       ? "TOTP_KEY is set, so changing STAFF_SECRET cannot lock the owner out of the authenticator app."
       : "Add TOTP_KEY in Vercel (Production, Sensitive): a long random string, at least 32 characters, different from STAFF_SECRET. Without it, changing STAFF_SECRET locks the owner out of the authenticator app. Write it in your password manager.",
   );
+  const memberOk = (env.MEMBER_LINK_MASTER_KEY?.trim().length ?? 0) >= 32;
+  add(
+    "member_link_key",
+    "Church Manager link key",
+    true,
+    memberOk
+      ? "MEMBER_LINK_MASTER_KEY is set. The Church Manager link can be switched on per church on the Churches page."
+      : "Not set, so the Church Manager link is off everywhere. That is fine until step 8 is used. To use it, add MEMBER_LINK_MASTER_KEY in Vercel (Production, Sensitive): a long random string, at least 32 characters.",
+  );
   const standIn = env.PROVIDER_STAND_IN_EMAIL?.trim() ?? "";
   const standInOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(standIn) && !/@example\./i.test(standIn);
   add(

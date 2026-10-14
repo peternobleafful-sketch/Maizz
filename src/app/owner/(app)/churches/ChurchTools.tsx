@@ -19,7 +19,7 @@ export interface ChurchRow {
 interface Bank { name: string; code: string; kind: "mobile_money" | "bank" }
 interface Person { id: string; name: string; email: string; role: string; status: string }
 
-type Reply = { error?: string; message?: string; notice?: string; challenge?: string; method?: "email" | "app"; banks?: Bank[]; people?: Person[]; church?: { name: string; status: string; payoutAccountName: string | null; slug: string } };
+type Reply = { error?: string; message?: string; notice?: string; challenge?: string; method?: "email" | "app"; banks?: Bank[]; people?: Person[]; memberLink?: { available: boolean; enabled: boolean; keyVersion: number }; key?: string; church?: { name: string; status: string; payoutAccountName: string | null; slug: string } };
 
 export default function ChurchTools({ churches }: { churches: ChurchRow[] }) {
   const router = useRouter();
@@ -36,6 +36,11 @@ export default function ChurchTools({ churches }: { churches: ChurchRow[] }) {
   const [code, setCode] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [people, setPeople] = useState<Person[] | null>(null);
+  const [link, setLink] = useState<{ available: boolean; enabled: boolean; keyVersion: number } | null>(null);
+  const [keyChallenge, setKeyChallenge] = useState("");
+  const [keyMethod, setKeyMethod] = useState<"email" | "app">("email");
+  const [keyCode, setKeyCode] = useState("");
+  const [shownKey, setShownKey] = useState("");
 
   async function call(body: Record<string, unknown>): Promise<Reply | null> {
     setBusy(true);
@@ -73,6 +78,12 @@ export default function ChurchTools({ churches }: { churches: ChurchRow[] }) {
     setAccount("");
     setConfirmed(false);
     setPeople(null);
+    setLink(null);
+    setKeyChallenge("");
+    setKeyCode("");
+    setShownKey("");
+    const l = await call({ action: "member_link", slug });
+    if (l?.memberLink) setLink(l.memberLink);
     if (banks.length === 0) {
       const b = await call({ action: "banks" });
       if (b?.banks) setBanks(b.banks);
@@ -118,6 +129,36 @@ export default function ChurchTools({ churches }: { churches: ChurchRow[] }) {
       setConfirmed(false);
       setMessage(`${r.church.name} is now ${r.church.status}.`);
       router.refresh();
+    }
+  }
+
+  async function linkChange(slug: string, action: "member_link_on" | "member_link_off" | "member_link_new_key") {
+    setMessage("");
+    setShownKey("");
+    const r = await call({ action, slug });
+    if (r?.memberLink) {
+      setLink(r.memberLink);
+      setMessage(r.message ?? "Done.");
+    }
+  }
+
+  async function keyCodeAsk(slug: string) {
+    setMessage("");
+    const r = await call({ action: "payout_code", slug });
+    if (r?.challenge) {
+      setKeyChallenge(r.challenge);
+      setKeyMethod(r.method === "app" ? "app" : "email");
+      setMessage(r.message ?? "A code was emailed to you.");
+    }
+  }
+
+  async function keyShow(slug: string) {
+    setMessage("");
+    const r = await call({ action: "member_link_key", slug, challenge: keyChallenge, code: keyCode });
+    if (r?.key) {
+      setShownKey(r.key);
+      setKeyChallenge("");
+      setKeyCode("");
     }
   }
 
@@ -227,6 +268,45 @@ export default function ChurchTools({ churches }: { churches: ChurchRow[] }) {
                           <button className="dash-btn ghost" type="button" disabled={busy} onClick={() => { if (window.confirm(`Suspend ${c.name}?`)) void change(c.slug, "suspend"); }}>Suspend church</button>
                         </div>
                       )}
+
+                      <div className="give-form">
+                        <h3>Church Manager link</h3>
+                        {!link ? (
+                          <p className="dash-muted">Loading…</p>
+                        ) : !link.available ? (
+                          <p className="dash-muted">Not set up yet. Add MEMBER_LINK_MASTER_KEY in Vercel first (see docs/CHURCH_MANAGER_LINK.md).</p>
+                        ) : (
+                          <>
+                            <p className="dash-muted">
+                              Lets members of this church see their own paid gifts inside Church Manager. It is {link.enabled ? "ON" : "OFF"}. Key number {link.keyVersion}.
+                            </p>
+                            {link.enabled ? (
+                              <button className="dash-btn ghost" type="button" disabled={busy} onClick={() => void linkChange(c.slug, "member_link_off")}>Turn off</button>
+                            ) : (
+                              <button className="dash-btn" type="button" disabled={busy} onClick={() => void linkChange(c.slug, "member_link_on")}>Turn on</button>
+                            )}
+                            {!keyChallenge && !shownKey && (
+                              <button className="dash-btn ghost" type="button" disabled={busy} onClick={() => void keyCodeAsk(c.slug)}>Show the secret key</button>
+                            )}
+                            {keyChallenge && (
+                              <>
+                                <div className="give-group">
+                                  <label className="give-label" htmlFor={`kcode-${c.slug}`}>{keyMethod === "app" ? "The 6-digit code from your authenticator app" : "The 6-digit code from your email"}</label>
+                                  <input id={`kcode-${c.slug}`} className="give-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={keyCode} onChange={(e) => setKeyCode(e.target.value)} />
+                                </div>
+                                <button className="dash-btn" type="button" disabled={busy || !/^\d{6}$/.test(keyCode.trim())} onClick={() => void keyShow(c.slug)}>Show key</button>
+                              </>
+                            )}
+                            {shownKey && (
+                              <>
+                                <p className="dash-muted">Put this into the Church Manager settings box. Never send it by email or chat. Closing this panel hides it.</p>
+                                <code className="dash-key" style={{ wordBreak: "break-all", display: "block" }}>{shownKey}</code>
+                              </>
+                            )}
+                            <button className="dash-btn ghost" type="button" disabled={busy} onClick={() => { if (window.confirm("Make a new key? The old one stops working straight away, and Church Manager must be given the new one.")) void linkChange(c.slug, "member_link_new_key"); }}>Make a new key</button>
+                          </>
+                        )}
+                      </div>
 
                       <div className="give-form">
                         <h3>People</h3>

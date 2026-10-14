@@ -1,5 +1,6 @@
 import { getAudit, sourceKeyFor, type AuditLog } from "@/lib/audit";
 import { checkStartLimits, noteSiteVolume, SITE_HOURLY_ALERT } from "@/lib/checkoutLimits";
+import { memberMasterKey } from "@/lib/memberLink";
 import { getNotifier } from "@/lib/notifyRuntime";
 import { readCappedText, sameSite } from "@/lib/staffRoutes";
 import { phoneKey, rateSecret } from "@/lib/rateKey";
@@ -76,6 +77,7 @@ export async function POST(req: Request) {
       testMode,
       live: keyKind === "live",
       standInEmail: process.env.PROVIDER_STAND_IN_EMAIL?.trim() || undefined,
+      memberLinkMaster: memberMasterKey(process.env),
     });
     return Response.json({
       reference: started.reference,
