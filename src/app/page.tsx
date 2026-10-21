@@ -143,8 +143,6 @@ export default function HomePage() {
       </section>
 
       <section className="pub-cta">
-        <FloatGift className="c1" />
-        <FloatChart className="c2" />
         <span className="pub-cta-mark">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/maizz-mark-white.png" alt="" width={285} height={296} />

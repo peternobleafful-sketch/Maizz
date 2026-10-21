@@ -6,6 +6,19 @@ import Icon from "./Icon";
 
 const SAMPLE = addFees(10000);
 
+/** An amount with a small "GH₵" in front, so the sign does not shout next to the digits. */
+function Money({ p }: { p: number }) {
+  const m = /^GH₵\s?(.*)$/.exec(formatCedis(p));
+  return m ? (
+    <>
+      <span className="pub-cur">GH₵</span>
+      {m[1]}
+    </>
+  ) : (
+    <>{formatCedis(p)}</>
+  );
+}
+
 export function Dashboard() {
   const bars = [
     { d: "S", h: 100 },
@@ -34,7 +47,7 @@ export function Dashboard() {
           <div className="pub-stats">
             <div className="pub-stat">
               <small>This month</small>
-              <b>{formatCedis(482000)}</b>
+              <b><Money p={482000} /></b>
               <i />
             </div>
             <div className="pub-stat">
@@ -44,7 +57,7 @@ export function Dashboard() {
             </div>
             <div className="pub-stat hide-sm">
               <small>Last Sunday</small>
-              <b>{formatCedis(131000)}</b>
+              <b><Money p={131000} /></b>
               <i className="c" />
             </div>
           </div>
@@ -116,7 +129,7 @@ export function PhoneGive() {
           </span>
         </div>
         <p className="pub-s-label">Amount</p>
-        <p className="pub-s-amount">{formatCedis(SAMPLE.giftPesewas)}</p>
+        <p className="pub-s-amount"><Money p={SAMPLE.giftPesewas} /></p>
         <div className="pub-s-chips">
           <span>20</span>
           <span>50</span>
@@ -129,11 +142,11 @@ export function PhoneGive() {
           <span>Seed</span>
         </div>
         <div className="pub-s-sum">
-          <p><span>Gift</span><span>{formatCedis(SAMPLE.giftPesewas)}</span></p>
-          <p><span>Fees</span><span>{formatCedis(SAMPLE.feePesewas)}</span></p>
-          <p className="big"><span>Total</span><span>{formatCedis(SAMPLE.totalPesewas)}</span></p>
+          <p><span>Gift</span><span><Money p={SAMPLE.giftPesewas} /></span></p>
+          <p><span>Fees</span><span><Money p={SAMPLE.feePesewas} /></span></p>
+          <p className="big"><span>Total</span><span><Money p={SAMPLE.totalPesewas} /></span></p>
         </div>
-        <div className="pub-s-btn">Give {formatCedis(SAMPLE.totalPesewas)}</div>
+        <div className="pub-s-btn">Give <Money p={SAMPLE.totalPesewas} /></div>
       </div>
     </div>
   );
@@ -144,7 +157,7 @@ export function MiniAmount() {
   return (
     <div className="pub-mini" aria-hidden="true">
       <small>Amount</small>
-      <b className="amt">{formatCedis(SAMPLE.giftPesewas)}</b>
+      <b className="amt"><Money p={SAMPLE.giftPesewas} /></b>
       <div className="pub-s-chips">
         <span>20</span>
         <span>50</span>
@@ -182,9 +195,9 @@ export function MiniDone() {
 export function Receipt() {
   return (
     <div className="pub-receipt" aria-hidden="true">
-      <p><span>Gift</span><span>{formatCedis(SAMPLE.giftPesewas)}</span></p>
-      <p><span>Fees</span><span>{formatCedis(SAMPLE.feePesewas)}</span></p>
-      <p className="big"><span>Total</span><span>{formatCedis(SAMPLE.totalPesewas)}</span></p>
+      <p><span>Gift</span><span><Money p={SAMPLE.giftPesewas} /></span></p>
+      <p><span>Fees</span><span><Money p={SAMPLE.feePesewas} /></span></p>
+      <p className="big"><span>Total</span><span><Money p={SAMPLE.totalPesewas} /></span></p>
       <p className="recv">Your church receives the full {formatCedis(SAMPLE.giftPesewas)}</p>
     </div>
   );
