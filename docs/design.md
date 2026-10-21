@@ -67,3 +67,13 @@ Never show an in-app pay button inside the iPhone app. The app opens the web che
 ## 11. Do and don't
 Do: big amount first, one clear action per screen, show the church name early, show test-mode pill while in test mode.
 Don't: stock photos of cash, preachy religious clichés, dark patterns, countdown pressure, more than one gradient per screen, tiny grey text.
+
+
+## 10. Public site (home, register, page not found) , added 21 Oct 2026
+Kobina chose this look from a fintech reference (a floating dark pill menu, a huge centred headline, rounded soft cards, a big colour panel with a phone, a closing colour band). Take the layout style only, never the reference's name, logo or wording. Colours stay Maizz: Blue, white and ink. Lime is still success only (ticks).
+- Menu: a floating ink pill, sticky at the top. Logo left, links centre, "Sign in" (outline) and "Register your church" (blue) right. On a phone: logo, "Sign in", "Register".
+- Home: hero (chip, headline, lede, two buttons, a sample church dashboard in a laptop frame with floating cards), "Three steps" cards, fees, "Why churches choose Maizz" (blue panel with a phone and four cards), security promises, find-your-church box, blue closing band, footer with a faint giant wordmark.
+- Every picture of the product is plain HTML, and every figure in it is a sample. The page says so ("Example screens. All figures are samples."). Never put invented statistics, country counts, customer names or app store badges on the public pages.
+- Footer contact: no email address until Maizz has its own mailbox. It points to the register form.
+- Code: `src/components/site/*` (menu, footer, pictures, icons) and `src/app/public.css` (classes start with `pub-`).
+- The giving page and the sign-in and dashboard pages keep their own look for now and can be restyled later.

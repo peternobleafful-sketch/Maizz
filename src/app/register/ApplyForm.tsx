@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import Icon from "@/components/site/Icon";
+import SiteFooter from "@/components/site/SiteFooter";
+import SiteNav from "@/components/site/SiteNav";
 
 export default function ApplyForm() {
   const [churchName, setChurchName] = useState("");
@@ -35,26 +38,27 @@ export default function ApplyForm() {
   }
 
   return (
-    <div className="give-wrap">
-      <main className="give">
-        <header className="give-hero">
-          <div className="give-top">
-            <Link href="/">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img className="give-logo" src="/brand/maizz-logo-white.png" alt="Maizz" width={1101} height={296} />
-            </Link>
-          </div>
-          <p className="give-eyebrow">FOR CHURCHES IN GHANA</p>
-          <h1 className="give-thanks tight">{done ? "Thank you" : "Register your church"}</h1>
-          <p className="give-lede">
+    <div className="pub">
+      <SiteNav />
+      <main className="pub-reg">
+        <div className="pub-reg-copy">
+          <p className="pub-chip">For churches in Ghana</p>
+          <h1>{done ? "Thank you" : "Register your church"}</h1>
+          <p className="pub-lede">
             {done
               ? "We have your details and will contact you."
               : "Maizz is opening soon. Tell us about your church and we will get in touch. Nothing is charged and nothing goes live yet."}
           </p>
-        </header>
-        <section className="give-sheet">
+          <ul className="pub-ticks">
+            <li><Icon name="check" size={18} />Nothing is charged to register</li>
+            <li><Icon name="check" size={18} />We phone or email you to confirm your church</li>
+            <li><Icon name="check" size={18} />Your church receives the full gift, every time</li>
+          </ul>
+        </div>
+        <section className="pub-card pub-reg-card">
           {done ? (
             <div className="give-form">
+              <h2>We will be in touch</h2>
               <p>We will phone or email the contact person to confirm your church before anything is set up.</p>
               <Link className="give-button as-link" href="/">Back to the home page</Link>
             </div>
@@ -105,6 +109,7 @@ export default function ApplyForm() {
           )}
         </section>
       </main>
+      <SiteFooter onRegisterPage />
     </div>
   );
 }

@@ -1,11 +1,21 @@
 import Link from "next/link";
-import { addFees } from "@/lib/fees";
-import { formatCedis } from "@/lib/money";
+import FindChurch from "./FindChurch";
+import Icon from "@/components/site/Icon";
+import { Dashboard, FloatChart, FloatGift, FloatPrompt, MiniAmount, MiniDone, MiniPrompt, PhoneGive, Receipt } from "@/components/site/Mockups";
+import SiteFooter from "@/components/site/SiteFooter";
+import SiteNav from "@/components/site/SiteNav";
 
 const STEPS = [
-  { t: "Pick an amount", d: "Open your church's giving page, type the amount and choose a gift type such as tithe or offering." },
-  { t: "Approve on your phone", d: "A prompt arrives from MTN, Vodafone or AirtelTigo. You enter your PIN on your own phone." },
-  { t: "See it confirmed", d: "The page tells you when the gift is received. The church sees it and is paid to its own account." },
+  { t: "Pick an amount", d: "Open your church's giving page, type the amount and choose a gift type such as tithe or offering.", pic: <MiniAmount /> },
+  { t: "Approve on your phone", d: "A prompt arrives from MTN, Vodafone or AirtelTigo. You enter your PIN on your own phone.", pic: <MiniPrompt /> },
+  { t: "See it confirmed", d: "The page tells you when the gift is received. The church sees it and is paid to its own account.", pic: <MiniDone /> },
+];
+
+const WHY = [
+  { icon: "bolt", t: "Speed", d: "Give from any phone in under a minute, with the mobile money you already use." },
+  { icon: "eye", t: "Transparency", d: "Givers see the fee before they pay. The church receives the exact gift." },
+  { icon: "shield", t: "Security", d: "Your PIN stays on your phone. No card numbers are kept." },
+  { icon: "grid", t: "Ease of use", d: "A simple dashboard for church teams. No technical skill needed." },
 ];
 
 const PROMISES = [
@@ -19,92 +29,135 @@ const PROMISES = [
 export const dynamic = "force-dynamic";
 
 export default function HomePage() {
-  const example = addFees(10000);
   return (
-    <div className="site">
-      <header className="site-hero">
-        <div className="site-wrap">
-          <div className="site-bar">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="site-logo" src="/brand/maizz-logo-white.png" alt="Maizz" width={1101} height={296} />
-            <nav className="site-nav" aria-label="Main">
-              <a href="#how">How it works</a>
-              <a href="#fees">Fees</a>
-              <a href="#security">Security</a>
-              <Link href="/church/sign-in">Church sign-in</Link>
-              <Link className="site-nav-cta" href="/register">Register your church</Link>
-            </nav>
-          </div>
-          <p className="site-eyebrow">COMING SOON</p>
-          <h1>Church giving by mobile money is coming soon.</h1>
-          <p className="site-lede">
-            Maizz is opening for churches in Ghana. Tithes, offerings and seeds from any phone, in under a minute. Your
-            church receives the full gift.
-          </p>
-          <div className="site-actions">
-            <Link className="site-btn" href="/register">Register your church</Link>
-          </div>
+    <div className="pub">
+      <SiteNav />
+
+      <header className="pub-hero">
+        <p className="pub-chip"><span className="dot" />Opening soon for churches in Ghana</p>
+        <h1>Giving for churches, made simple.</h1>
+        <p className="pub-lede">
+          Tithes, offerings and seeds by mobile money, from any phone, in under a minute. Your church receives the full gift.
+        </p>
+        <div className="pub-actions">
+          <Link className="pub-btn ink big" href="/register">Register your church</Link>
+          <a className="pub-btn line big" href="#how">See how it works</a>
         </div>
+        <div className="pub-stage">
+          <Dashboard />
+          <FloatGift className="f1" />
+          <FloatPrompt className="f2" />
+          <FloatChart className="f3" />
+        </div>
+        <p className="pub-example">Example screens. All figures are samples.</p>
       </header>
 
-      <section className="site-wrap site-split">
-        <h2>What Maizz is</h2>
-        <p>
-          Maizz lets people give tithes and offerings to their church by mobile money. Givers pay from their own phone
-          with MTN, Vodafone or AirtelTigo. Churches see every gift, get paid to their own account, and keep clear records.
-        </p>
+      <section className="pub-section" id="how">
+        <div className="pub-head">
+          <h2>Three steps. No forms to fill in.</h2>
+          <p>Givers never need an account. They pick an amount, approve on their phone, and they are done.</p>
+        </div>
+        <div className="pub-steps">
+          {STEPS.map((s, i) => (
+            <article className="pub-step" key={s.t}>
+              <div className="pub-step-pic">{s.pic}</div>
+              <h3><span className="pub-num">{i + 1}</span>{s.t}</h3>
+              <p>{s.d}</p>
+            </article>
+          ))}
+        </div>
       </section>
 
-      <section className="site-band" id="how">
-        <div className="site-wrap site-stack">
-          <h2>How it works</h2>
-          <div className="site-cards">
-            {STEPS.map((s, i) => (
-              <div className="site-card" key={s.t}>
-                <span className="site-num">{i + 1}</span>
-                <h3>{s.t}</h3>
-                <p>{s.d}</p>
-              </div>
+      <section className="pub-section" id="fees">
+        <div className="pub-fees">
+          <div className="pub-fees-copy">
+            <h2>Fees, explained plainly</h2>
+            <p>Givers cover the fees. The giver sees the fee before paying. The church receives the full gift, every time.</p>
+            <ul className="pub-ticks">
+              <li><Icon name="check" size={18} />No fee taken from the church&apos;s gift</li>
+              <li><Icon name="check" size={18} />The total is shown before anyone pays</li>
+              <li><Icon name="check" size={18} />Mobile money first, charged straight from the giving page</li>
+            </ul>
+          </div>
+          <div className="pub-fees-card">
+            <p className="pub-tag">Example gift</p>
+            <Receipt />
+          </div>
+        </div>
+      </section>
+
+      <section className="pub-section" id="why">
+        <div className="pub-head">
+          <h2>Why churches choose Maizz</h2>
+          <p>Built for churches in Ghana, and for the people who give to them.</p>
+        </div>
+        <div className="pub-why">
+          <div className="pub-why-col">
+            {WHY.slice(0, 2).map((w) => (
+              <article className="pub-why-card" key={w.t}>
+                <span className="pub-badge"><Icon name={w.icon} /></span>
+                <h3>{w.t}</h3>
+                <p>{w.d}</p>
+              </article>
+            ))}
+          </div>
+          <div className="pub-why-stage">
+            <PhoneGive />
+          </div>
+          <div className="pub-why-col">
+            {WHY.slice(2).map((w) => (
+              <article className="pub-why-card" key={w.t}>
+                <span className="pub-badge"><Icon name={w.icon} /></span>
+                <h3>{w.t}</h3>
+                <p>{w.d}</p>
+              </article>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="site-wrap site-split centre" id="fees">
-        <div className="site-stack">
-          <h2>Fees, explained plainly</h2>
-          <p>Givers cover the fees. The giver sees the fee before paying. The church receives the full gift, every time.</p>
-        </div>
-        <div className="site-example">
-          <p className="site-eyebrow">EXAMPLE GIFT</p>
-          <p className="give-row"><span>Gift</span><span>{formatCedis(example.giftPesewas)}</span></p>
-          <p className="give-row"><span>Fees</span><span>{formatCedis(example.feePesewas)}</span></p>
-          <p className="give-row big"><span>Total</span><span>{formatCedis(example.totalPesewas)}</span></p>
-          <p className="site-receives">Your church receives the full {formatCedis(example.giftPesewas)}</p>
-        </div>
-      </section>
-
-      <section className="site-band" id="security">
-        <div className="site-wrap site-stack">
+      <section className="pub-section" id="security">
+        <div className="pub-head">
           <h2>Security promises</h2>
-          <div className="site-cards four">
-            {PROMISES.map((p) => (
-              <div className="site-card" key={p.t}>
-                <h3>{p.t}</h3>
-                <p>{p.d}</p>
-              </div>
-            ))}
-          </div>
+          <p>Plain promises we keep, because people are giving money.</p>
+        </div>
+        <div className="pub-promises">
+          {PROMISES.map((p) => (
+            <article className="pub-promise" key={p.t}>
+              <span className="pub-tick"><Icon name="check" size={16} /></span>
+              <h3>{p.t}</h3>
+              <p>{p.d}</p>
+            </article>
+          ))}
         </div>
       </section>
 
-      <footer className="site-foot">
-        <div className="site-wrap foot-row">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className="site-logo small" src="/brand/maizz-logo-white.png" alt="Maizz" width={1101} height={296} />
-          <span>Giving for churches in Ghana</span>
+      <section className="pub-section narrow" id="find">
+        <div className="pub-find">
+          <div>
+            <h2>Giving to your church?</h2>
+            <p>Enter the end of your church&apos;s giving link to go to its page.</p>
+          </div>
+          <FindChurch />
         </div>
-      </footer>
+      </section>
+
+      <section className="pub-cta">
+        <FloatGift className="c1" />
+        <FloatChart className="c2" />
+        <span className="pub-cta-mark">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/maizz-mark-white.png" alt="" width={285} height={296} />
+        </span>
+        <h2>Ready to register your church?</h2>
+        <p>Tell us about your church. Nothing is charged, and nothing goes live until we have spoken to you.</p>
+        <div className="pub-actions">
+          <Link className="pub-btn ink big" href="/register">Register your church</Link>
+          <Link className="pub-btn white big" href="/church/sign-in">Church sign-in</Link>
+        </div>
+      </section>
+
+      <SiteFooter />
     </div>
   );
 }
